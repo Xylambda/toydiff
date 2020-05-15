@@ -26,7 +26,7 @@ pip install -e toydiff/. -r toydiff/requirements-dev.txt
 To run test, you must install the library as a developer.
 ```bash
 cd toydiff/
-sh run_tests/
+sh run_tests
 ```
 
 alternatively:
@@ -35,7 +35,7 @@ cd toydiff/
 pytest -v tests/
 ```
 
-## Computational Graphs
+## Usage
 You can build simple computational graphs using toydiff. Let's build the graph 
 for the function *f (x, y, z) = (x + y)·z*. 
 This example comes from [Stanford backprop lecture](http://cs231n.stanford.edu/slides/2017/cs231n_2017_lecture4.pdf)
@@ -60,3 +60,26 @@ f_val = f.forward(q_val, z)
 df_dq, df_dz = f.backward(incoming_grad = 1) # df/df = 1
 dq_dx, dq_dy = q.backward(incoming_grad=df_dq)
 ```
+
+You can also work with NumPy arrays (most of the time):
+```python
+import numpy as np
+from toydiff.ops import Sin, Cos
+from matplotlib import pyplot as plt
+
+x = np.arange(-5,5, 0.2)
+
+sin = Sin()
+cos = Cos()
+
+fig, ax = plt.subplots(nrows=1, ncols=2, figsize=(15,4))
+ax[0].plot(sin.forward(x), label="sin(x)")
+ax[0].plot(sin.backward(incoming_grad=1), label="d/dx sin(x)")
+ax[0].legend()
+
+ax[1].plot(cos.forward(x), label="cos(x)")
+ax[1].plot(cos.backward(incoming_grad=1), label="d/dx cos(x)")
+ax[1].legend()
+```
+
+![Sin_Cos](sin_cos.png)
