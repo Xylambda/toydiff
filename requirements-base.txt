@@ -1,0 +1,2 @@
+--extra-index https://pypi.org/simple
+numpy==1.17.4
