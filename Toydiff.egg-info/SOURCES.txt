@@ -1,7 +1,0 @@
-README.md
-setup.py
-Toydiff.egg-info/PKG-INFO
-Toydiff.egg-info/SOURCES.txt
-Toydiff.egg-info/dependency_links.txt
-Toydiff.egg-info/requires.txt
-Toydiff.egg-info/top_level.txt
