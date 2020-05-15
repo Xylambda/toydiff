@@ -3,30 +3,34 @@ Toydiff is a small toy-package to perform automatic differentiation on
 scalars. It is built using plain Python and NumPy to be able to handle NumPy
 arrays.
 
-The library consist of a set of operations that `keep track of the gradient`. 
-The operations can compute in `forward` and `backward` modes.
+The library consist of a set of operations (not all operations implemented) 
+that `keep track of the gradient`. The operations can compute in `forward` and 
+`backward` modes.
 
 ## Installation
 Normal user:
 ```bash
+git clone https://github.com/Xylambda/Toydiff.git
 pip install toydiff/.
 ```
 
 alternatively:
 ```bash
+git clone https://github.com/Xylambda/Toydiff.git
 pip install toydiff/. -r toydiff/requirements-base.txt
 ```
 
 Developer:
 ```bash
+git clone https://github.com/Xylambda/Toydiff.git
 pip install -e toydiff/. -r toydiff/requirements-dev.txt
 ```
 
 ## Tests
-To run test, you must install the library as a developer.
+To run test, you must install the library as a `developer`.
 ```bash
 cd toydiff/
-sh run_tests
+sh run_tests.sh
 ```
 
 alternatively:
@@ -61,7 +65,8 @@ df_dq, df_dz = f.backward(incoming_grad = 1) # df/df = 1
 dq_dx, dq_dy = q.backward(incoming_grad=df_dq)
 ```
 
-You can also work with NumPy arrays (most of the time):
+You can also work with NumPy arrays (most of the time because operations are 
+element-wise).
 ```python
 import numpy as np
 from toydiff.ops import Sin, Cos
