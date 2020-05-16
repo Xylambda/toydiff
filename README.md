@@ -40,13 +40,15 @@ pytest -v tests/
 ```
 
 ## Usage
-You can build simple computational graphs using toydiff. Let's build the graph 
-for the function *f (x, y, z) = (x + y)·z*. 
-This example comes from [Stanford backprop lecture](http://cs231n.stanford.edu/slides/2017/cs231n_2017_lecture4.pdf)
+You can build simple computational graphs using toydiff. The parameter 
+`incoming_grad` let's you backpropagate the gradients. Let's build the 
+computational graph for the function *f (x, y, z) = (x + y)·z*. 
+This example comes from [Stanford backprop. lecture.](http://cs231n.stanford.edu/slides/2017/cs231n_2017_lecture4.pdf)
 
 We will call *q = (x + y)*. Assume that *x = -2, y = 5, z = -4*; then:
 ```python
 from toydiff.ops import Add, Multiply
+
 
 x = -2
 y = 5
@@ -57,20 +59,21 @@ q = Add()
 f = Multiply()
 
 # run graph
-q_val = q.forward(x, y)
-f_val = f.forward(q_val, z)
+f_val = f(q(x, y), z)
 
 # see gradients
 df_dq, df_dz = f.backward(incoming_grad = 1) # df/df = 1
-dq_dx, dq_dy = q.backward(incoming_grad=df_dq)
+dq_dx, dq_dy = q.backward(incoming_grad=df_dq) # propagate gradient
 ```
 
 You can also work with NumPy arrays (most of the time because operations are 
 element-wise).
 ```python
 import numpy as np
+
 from toydiff.ops import Sin, Cos
 from matplotlib import pyplot as plt
+
 
 x = np.arange(-5,5, 0.2)
 
@@ -78,11 +81,11 @@ sin = Sin()
 cos = Cos()
 
 fig, ax = plt.subplots(nrows=1, ncols=2, figsize=(15,4))
-ax[0].plot(sin.forward(x), label="sin(x)")
+ax[0].plot(sin(x), label="sin(x)")
 ax[0].plot(sin.backward(incoming_grad=1), label="d/dx sin(x)")
 ax[0].legend()
 
-ax[1].plot(cos.forward(x), label="cos(x)")
+ax[1].plot(cos(x), label="cos(x)")
 ax[1].plot(cos.backward(incoming_grad=1), label="d/dx cos(x)")
 ax[1].legend()
 ```

@@ -29,6 +29,9 @@ class _Operation:
         # gradient of the operands
         self.a_grad = None
         self.b_grad = None
+
+    def __call__(self, *args):
+        return self.forward(*args)
     
     def forward(self):
         pass
