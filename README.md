@@ -10,19 +10,19 @@ that `keep track of the gradient`. The operations can compute in `forward` and
 ## Installation
 Normal user:
 ```bash
-git clone https://github.com/Xylambda/Toydiff.git
+git clone https://github.com/Xylambda/toydiff.git
 pip install toydiff/.
 ```
 
 alternatively:
 ```bash
-git clone https://github.com/Xylambda/Toydiff.git
+git clone https://github.com/Xylambda/toydiff.git
 pip install toydiff/. -r toydiff/requirements-base.txt
 ```
 
 Developer:
 ```bash
-git clone https://github.com/Xylambda/Toydiff.git
+git clone https://github.com/Xylambda/toydiff.git
 pip install -e toydiff/. -r toydiff/requirements-dev.txt
 ```
 
@@ -66,8 +66,8 @@ df_dq, df_dz = f.backward(incoming_grad = 1) # df/df = 1
 dq_dx, dq_dy = q.backward(incoming_grad=df_dq) # propagate gradient
 ```
 
-You can also work with NumPy arrays (most of the time because operations are 
-element-wise).
+You can also work with NumPy arrays (just remember operations are applied
+element-wisely).
 ```python
 import numpy as np
 
