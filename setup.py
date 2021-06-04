@@ -2,7 +2,7 @@ from setuptools import setup, find_packages
 import versioneer
 
 setup(
-    name='Toydiff',
+    name='toydiff',
     version=versioneer.get_version(),
     cmdclass=versioneer.get_cmdclass(),
     description='A simple package to perform automatic differentiation on \
