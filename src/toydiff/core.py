@@ -157,6 +157,8 @@ class UnaryOp(Operation):  # LOG, SIN, COS, TAN, SQRT, EXP, POW
 
 
 class BinaryOp(Operation):  # ADD, MULTIPLY, DIVIDE, SUBTRACT
+    """Base class to implement binary operations.
+    """
     __slots__ = ["tensor_a", "tensor_b", "parents"]
 
     def __init__(self, tensor_a: "Tensor", tensor_b: "Tensor"):

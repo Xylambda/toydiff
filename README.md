@@ -1,11 +1,12 @@
 # Toydiff
-Toydiff is a small toy-package to perform automatic differentiation on 
-scalars. It is built using plain Python and NumPy to be able to handle NumPy
-arrays.
 
-The library consist of a set of operations (not all operations implemented) 
-that `keep track of the gradient`. The operations can compute in `forward` and 
-`backward` modes.
+`toydiff` is a simple automatic differentiation library that I created to wrap
+my head around how autodiff works.
+
+It is build using only NumPy and tested against PyTorch.
+
+The libray is very versatile, and can be used to create and train neural
+networks (of course).
 
 ## Installation
 Normal user:
@@ -40,54 +41,106 @@ pytest -v tests/
 ```
 
 ## Usage
-You can build simple computational graphs using toydiff. The parameter 
-`incoming_grad` let's you backpropagate the gradients. Let's build the 
-computational graph for the function *f (x, y, z) = (x + y)·z*. 
-This example comes from [Stanford backprop. lecture.](http://cs231n.stanford.edu/slides/2017/cs231n_2017_lecture4.pdf)
+The use is almost the same as the one you would expect from PyTorch:
 
-We will call *q = (x + y)*. Assume that *x = -2, y = 5, z = -4*; then:
 ```python
-from toydiff.ops import Add, Multiply
+>>> import numpy as np
+>>> import toydiff as tdf
 
-
-x = -2
-y = 5
-z = -4
-
-# create graph
-q = Add()
-f = Multiply()
-
-# run graph
-f_val = f(q(x, y), z)
-
-# see gradients
-df_dq, df_dz = f.backward(incoming_grad = 1) # df/df = 1
-dq_dx, dq_dy = q.backward(incoming_grad=df_dq) # propagate gradient
+>>> # use `track_gradient=True` to allow backward to fill the gradients
+>>> a = tdf.Tensor(np.random.rand(3,3), track_gradient=True)
+>>> b = tdf.Tensor(np.random.rand(3,3), track_gradient=True)
+>>> c = tdf.matmul(a, b)
+>>> d = tdf.log(c)
+>>> e = tdf.sum(d)
 ```
 
-You can also work with NumPy arrays (just remember operations are applied
-element-wisely).
+Variable `e` is Tensor that allows to backpropagate:
 ```python
-import numpy as np
-
-from toydiff.ops import Sin, Cos
-from matplotlib import pyplot as plt
-
-
-x = np.arange(-5,5, 0.2)
-
-sin = Sin()
-cos = Cos()
-
-fig, ax = plt.subplots(nrows=1, ncols=2, figsize=(15,4))
-ax[0].plot(sin(x), label="sin(x)")
-ax[0].plot(sin.backward(incoming_grad=1), label="d/dx sin(x)")
-ax[0].legend()
-
-ax[1].plot(cos(x), label="cos(x)")
-ax[1].plot(cos.backward(incoming_grad=1), label="d/dx cos(x)")
-ax[1].legend()
+>>> e
+>>> Tensor(-4.30126, dtype=float32, backward_fn=<Sum.backward>)
+>>> e.backward()  # can pass a gradient tensor too if needed
+>>> a.gradient
+Tensor([[1.539179  , 3.2685497 , 0.8082636 ],
+       [2.9209654 , 6.9494014 , 1.2896122 ],
+       [1.768115  , 3.879517  , 0.83321786]], dtype=float32)
 ```
 
-![Sin_Cos](sin_cos.png)
+The library also tracks intermediate gradients by default, no need to perform
+extra steps to do so:
+
+```python
+>>> d.gradient
+Tensor([[1., 1., 1.],
+       [1., 1., 1.],
+       [1., 1., 1.]], dtype=float32)
+```
+
+## Custom operations
+If, for some reason, the pool of operations `toydiff` provides is not enough,
+one can easily create one. Let's use matrix multiplication as example, since it
+also involves the use of dunder methods.
+
+We first need to decide which type of operation we want; there are 3 types:
+    * Unary: f(a) = a, keeps dimensions. e.g. log, exp.
+    * Reduce: f(a) = a, reduce dimensions. e.g. sum, max.
+    * Binary: f(a, b) = c. e.g. add, matmul.
+
+A matrix multiplication operation is a binary operation, so we need to extend
+the corresponding class to create out own:
+
+
+```python
+import toydiff as tdf
+from toydiff.core import BinaryOp
+```
+
+Unless specific requirements, we do not need to fill the constructor method,
+only the `forward`, `backward` and `__repr__` methods:
+    * The `forward` method must contain the implementation of the operation,
+    and the output must be wrapped in a Tensor Class. The parameters `parents`
+    and `track_gradient` must be filled with the ones provide by the base
+    class, and the parameter `is_leaf` must be set to True, since the output
+    tensor is not a leaf node of the graph.
+    * The `backward` pass implemets the gradient calculation for the operands
+    involved in the operation. Add the if provided `always` to obtain a
+    gradient Tensor if None is passed. Lastly, wrap the arrays in a Tensor
+    class and call `_set_gradients`. Any returned value will be ignored.
+
+
+```python
+class MatMul(BinaryOp):
+    def forward(self, *args, **kwargs):
+        data_a, data_b = self.get_value()
+        return Tensor(
+            np.matmul(data_a, data_b, *args, **kwargs),
+            parents=self.parents,
+            is_leaf=False,
+        )
+
+    def backward(self, gradient: "Tensor" = None):
+        if gradient is None:
+            gradient = self.get_gradient()
+
+        grad_np = gradient.numpy()
+        gradient_a = Tensor(grad_np @ self.tensor_b.numpy().T)
+        gradient_b = Tensor(self.tensor_a.numpy().T @ grad_np)
+        self._set_gradients(gradient_a, gradient_b)
+
+    def __repr__(self):
+        return "MatMul(BinaryOp)"
+```
+
+To call the operation, it is convenient to use the `OperationRunner` class. We
+will wrap everything in a function:
+
+```python
+from toydiff.core import OperationRunner
+def matmul(tensor_a, tensor_b, *args, **kwargs):
+    return OperationRunner(MatMul, tensor_a, tensor_b).run(*args, **kwargs)
+```
+
+Now, we can monkey patch the Tensor class to add a matmul operation:
+```python
+setattr(Tensor, "__matmul__", matmul)
+```
