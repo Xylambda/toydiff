@@ -1,2 +1,5 @@
--r requirements-base.txt
-pytest==5.3.5
+-r requirements.txt
+
+flake8
+isort
+black
