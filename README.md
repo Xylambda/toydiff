@@ -55,7 +55,7 @@ The use is almost the same as the one you would expect from PyTorch:
 >>> e = tdf.sum(d)
 ```
 
-Variable `e` is Tensor that allows to backpropagate:
+Variable `e` is a Tensor that allows to backpropagate:
 ```python
 >>> e
 >>> Tensor(-4.30126, dtype=float32, backward_fn=<Sum.backward>)
@@ -82,9 +82,11 @@ one can easily create one. Let's use matrix multiplication as example, since it
 also involves the use of dunder methods.
 
 We first need to decide which type of operation we want; there are 3 types:
-    * Unary: f(a) = a, keeps dimensions. e.g. log, exp.
-    * Reduce: f(a) = a, reduce dimensions. e.g. sum, max.
-    * Binary: f(a, b) = c. e.g. add, matmul.
+* Unary: f(a) = a, keeps dimensions. e.g. log, exp.
+
+* Reduce: f(a) = a, reduce dimensions. e.g. sum, max.
+
+* Binary: f(a, b) = c. e.g. add, matmul.
 
 A matrix multiplication operation is a binary operation, so we need to extend
 the corresponding class to create out own:
@@ -97,15 +99,16 @@ from toydiff.core import BinaryOp
 
 Unless specific requirements, we do not need to fill the constructor method,
 only the `forward`, `backward` and `__repr__` methods:
-    * The `forward` method must contain the implementation of the operation,
-    and the output must be wrapped in a Tensor Class. The parameters `parents`
-    and `track_gradient` must be filled with the ones provide by the base
-    class, and the parameter `is_leaf` must be set to True, since the output
-    tensor is not a leaf node of the graph.
-    * The `backward` pass implemets the gradient calculation for the operands
-    involved in the operation. Add the if provided `always` to obtain a
-    gradient Tensor if None is passed. Lastly, wrap the arrays in a Tensor
-    class and call `_set_gradients`. Any returned value will be ignored.
+* The `forward` method must contain the implementation of the operation,
+and the output must be wrapped in a Tensor Class. The parameters `parents`
+and `track_gradient` must be filled with the ones provide by the base
+class, and the parameter `is_leaf` must be set to True, since the output
+tensor is not a leaf node of the graph.
+
+* The `backward` pass implemets the gradient calculation for the operands
+involved in the operation. Add the if provided `always` to obtain a
+gradient Tensor if None is passed. Lastly, wrap the arrays in a Tensor
+class and call `_set_gradients`. Any returned value will be ignored.
 
 
 ```python

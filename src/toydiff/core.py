@@ -136,7 +136,9 @@ class Operation:
         raise NotImplementedError("Subclasses must override this method")
 
 
-class UnaryOp(Operation):  # LOG, SIN, COS, TAN, SQRT, EXP, POW
+class UnaryOp(Operation):  # LOG, TAN, SQRT, EXP
+    """Base class to implement unary operations.
+    """
     __slots__ = ["tensor", "parents", "out"]
 
     def __init__(self, tensor: "Tensor"):
@@ -156,8 +158,24 @@ class UnaryOp(Operation):  # LOG, SIN, COS, TAN, SQRT, EXP, POW
             self.tensor.gradient = gradient
 
 
-class BinaryOp(Operation):  # ADD, MULTIPLY, DIVIDE, SUBTRACT
+class BinaryOp(Operation):  # DIVIDE
     """Base class to implement binary operations.
+
+    The method `get_value` will return the NumPy arrays of the tensor_a and
+    tensor_b in the same order they were passed.
+
+    Similarly, the method `_set_gradients` expects the first and second
+    arguments to be the gradients for the first and second tensors passed in
+    the constructors (respectively).
+
+    Parameters
+    ----------
+    tensor_a : toydiff.Tensor
+    tensor_b : toydiff.Tensor
+
+    Attributes
+    ----------
+    parents : list of toydiff.Tensor
     """
     __slots__ = ["tensor_a", "tensor_b", "parents"]
 
@@ -173,7 +191,7 @@ class BinaryOp(Operation):  # ADD, MULTIPLY, DIVIDE, SUBTRACT
         self.tensor_a = tensor_a
         self.tensor_b = tensor_b
 
-        self.parents = [tensor_a, tensor_b]
+        self.parents = [self.tensor_a, self.tensor_b]
 
     def get_value(self):
         return self.tensor_a.numpy(), self.tensor_b.numpy()
