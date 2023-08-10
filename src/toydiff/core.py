@@ -7,8 +7,8 @@ Core of the library toydiff. It contains:
 The module is structured as follows:
     1. First, the base classes are defined. 3 types of operations can be
     performed:
-        * Unary: f(a) = a, keeps dimensions. e.g. log, exp.
-        * Reduce: f(a) = a, reduce dimensions. e.g. sum, max.
+        * Unary: f(a) = b, keeps dimensions. e.g. log, exp.
+        * Reduce: f(a) = b, reduce dimensions. e.g. sum, max.
         * Binary: f(a, b) = c. e.g. add, matmul.
 
     2. Then, a class is defined for each operation. Each class extends the
@@ -126,12 +126,34 @@ class Operation:
         """Helper method to set the gradients of the parent tensors."""
         raise NotImplementedError("Subclasses must override this method")
 
+    def _backward_fn(self, gradient = None) -> None:
+        """Actual backward call.
+
+        This method ensures the passed gradient is not None and then calls
+        the backward method that is implement for this operation using the
+        aforementioned gradient.
+
+        Parameters
+        ----------
+        gradient : toydiff.Tensor
+        """
+        if gradient is None:
+            gradient = self.get_gradient()
+
+        self.backward(gradient=gradient)
+
     @abstractmethod
     def backward(self, gradient: "Tensor" = None) -> None:
         """Backward pass.
 
         Sets the gradient of this operation with respect to its operands times
         the incoming gradient.
+
+        Parameters
+        ----------
+        gradient : toydiff.Tensor, optional, default: None
+            If None, a Tensor of 1's of the same shape as the output tensor of
+            this operation will be used.
         """
         raise NotImplementedError("Subclasses must override this method")
 
@@ -267,7 +289,7 @@ class OperationRunner:
         out = operation(*args, **kwargs)
         if operation.track_gradient:
             out.track_gradient = operation.track_gradient
-            out.backward_fn = operation.backward
+            out.backward_fn = operation._backward_fn
 
         return out
 
@@ -285,9 +307,6 @@ class Add(BinaryOp):
         )
 
     def backward(self, gradient: "Tensor" = None):
-        if gradient is None:
-            gradient = self.get_gradient()
-
         data_a, data_b = self.get_value()
         np_grad = gradient.numpy()
 
@@ -373,9 +392,6 @@ class MatrixMultiplication(BinaryOp):
         )
 
     def backward(self, gradient: "Tensor" = None):
-        if gradient is None:
-            gradient = self.get_gradient()
-
         grad_np = gradient.numpy()
         gradient_a = Tensor(grad_np @ self.tensor_b.numpy().T)
         gradient_b = Tensor(self.tensor_a.numpy().T @ grad_np)
@@ -416,9 +432,6 @@ class Multiply(BinaryOp):
         )
 
     def backward(self, gradient: "Tensor" = None):
-        if gradient is None:
-            gradient = self.get_gradient()
-
         data_a, data_b = self.get_value()
         np_grad = gradient.numpy()
 
@@ -461,8 +474,7 @@ class Power(BinaryOp):
         )
 
     def backward(self, gradient: "Tensor" = None):
-        if gradient is None:
-            gradient = self.get_gradient()
+        raise NotImplementedError
 
     def __repr__(self):
         return "Power(BinaryOp)"
@@ -488,9 +500,6 @@ class Maximum(BinaryOp):
         )
 
     def backward(self, gradient: "Tensor" = None):
-        if gradient is None:
-            gradient = self.get_gradient()
-
         data_a, data_b = self.get_value()
         grad_np = gradient.numpy()
         base_grad = np.isclose(data_a, data_b) * 0.5
@@ -552,9 +561,6 @@ class Minimum(BinaryOp):
         )
 
     def backward(self, gradient: "Tensor" = None):
-        if gradient is None:
-            gradient = self.get_gradient()
-
         data_a, data_b = self.get_value()
         grad_np = gradient.numpy()
         base_grad = np.isclose(data_a, data_b) * 0.5
@@ -616,9 +622,6 @@ class Log(UnaryOp):
         )
 
     def backward(self, gradient: "Tensor" = None):
-        if gradient is None:
-            gradient = self.get_gradient()
-
         self._set_gradients(Tensor((1 / self.tensor.numpy()) * gradient))
 
     def __repr__(self) -> str:
@@ -649,9 +652,6 @@ class Sigmoid(UnaryOp):
         return Tensor(self.sigmoid, is_leaf=False, parents=self.parents)
 
     def backward(self, gradient: "Tensor" = None):
-        if gradient is None:
-            gradient = self.get_gradient()
-
         self._set_gradients(
             Tensor((self.sigmoid * (1 - self.sigmoid)) * gradient)
         )
@@ -687,9 +687,6 @@ class Negative(UnaryOp):
         )
 
     def backward(self, gradient: "Tensor" = None) -> None:
-        if gradient is None:
-            gradient = self.get_gradient()
-
         self._set_gradients(Tensor(-np.ones_like(self.get_value()) * gradient))
 
     def __repr__(self) -> str:
@@ -720,9 +717,6 @@ class Sin(UnaryOp):
         )
 
     def backward(self, gradient: "Tensor" = None) -> None:
-        if gradient is None:
-            gradient = self.get_gradient()
-
         self._set_gradients(Tensor(np.cos(self.get_value()) * gradient))
 
     def __repr__(self) -> str:
@@ -741,9 +735,6 @@ class Cos(UnaryOp):
         )
 
     def backward(self, gradient: "Tensor" = None) -> None:
-        if gradient is None:
-            gradient = self.get_gradient()
-
         grad = Tensor(
             -np.sin(self.get_value()) * gradient, dtype=self.tensor.dtype
         )
@@ -768,9 +759,6 @@ class Reshape(UnaryOp):
         )
 
     def backward(self, gradient: "Tensor" = None) -> None:
-        if gradient is None:
-            gradient = self.get_gradient()
-
         grad = Tensor(
             np.ones_like(self.get_value()) * gradient.numpy(),
             dtype=self.tensor.dtype,
@@ -797,9 +785,6 @@ class Max(ReduceOp):
         )
 
     def backward(self, gradient: "Tensor" = None):
-        if gradient is None:
-            gradient = self.get_gradient()
-
         # TODO: deal with axis != None
         data = self.get_value()
         indices = np.unravel_index(data.argmax(), data.shape)
@@ -831,9 +816,6 @@ class Min(ReduceOp):
         )
 
     def backward(self, gradient: "Tensor" = None):
-        if gradient is None:
-            gradient = self.get_gradient()
-
         # TODO: deal with axis != None
         # TODO: gradient is Tensor, not a scaler or NumPy
         data = self.get_value()
@@ -866,9 +848,6 @@ class Sum(ReduceOp):
         )
 
     def backward(self, gradient: "Tensor" = None):
-        if gradient is None:
-            gradient = self.get_gradient()
-
         self._set_gradients(
             Tensor(
                 gradient.numpy() * np.ones_like(self.get_value())
@@ -913,9 +892,6 @@ class Slice(ReduceOp):
         )
 
     def backward(self, gradient: "Tensor" = None):
-        if gradient is None:
-            gradient = self.get_gradient()
-
         grad = np.zeros_like(self.tensor.numpy())
         grad.__setitem__(self.key, 1)
         self._set_gradients(

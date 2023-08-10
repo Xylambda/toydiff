@@ -82,9 +82,9 @@ one can easily create one. Let's use matrix multiplication as example, since it
 also involves the use of dunder methods.
 
 We first need to decide which type of operation we want; there are 3 types:
-* Unary: f(a) = a, keeps dimensions. e.g. log, exp.
+* Unary: f(a) = b, keeps dimensions. e.g. log, exp.
 
-* Reduce: f(a) = a, reduce dimensions. e.g. sum, max.
+* Reduce: f(a) = b, reduce dimensions. e.g. sum, max.
 
 * Binary: f(a, b) = c. e.g. add, matmul.
 
@@ -101,14 +101,13 @@ Unless specific requirements, we do not need to fill the constructor method,
 only the `forward`, `backward` and `__repr__` methods:
 * The `forward` method must contain the implementation of the operation,
 and the output must be wrapped in a Tensor Class. The parameters `parents`
-and `track_gradient` must be filled with the ones provide by the base
+and `track_gradient` should be filled with the ones provide by the base
 class, and the parameter `is_leaf` must be set to True, since the output
 tensor is not a leaf node of the graph.
 
 * The `backward` pass implemets the gradient calculation for the operands
-involved in the operation. Add the if provided `always` to obtain a
-gradient Tensor if None is passed. Lastly, wrap the arrays in a Tensor
-class and call `_set_gradients`. Any returned value will be ignored.
+involved in the operation. Lastly, wrap the arrays in a Tensor class and call
+`_set_gradients`. Any returned value will be ignored.
 
 
 ```python
