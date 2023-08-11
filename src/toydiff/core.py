@@ -35,6 +35,7 @@ __UNARY_OPS = [
     "sin",
     "cos",
     "reshape",
+    "exp",
 ]
 
 __BINARY_OPS = [
@@ -44,13 +45,23 @@ __BINARY_OPS = [
     "multiply",
     "power",
     "maximum",
-    "minimum"
+    "minimum",
+    "divide",
 ]
 
 __REDUCE_OPS = ["max", "min", "sum"]
 
 # other functions of this module
-__OTHER = ["ones", "ones_like", "zeros", "zeros_like", "empty", "empty_like"]
+__OTHER = [
+    "ones",
+    "ones_like",
+    "zeros",
+    "zeros_like",
+    "empty",
+    "empty_like",
+    "rand",
+    "randn",
+]
 
 __all__ = ["Tensor"] + __UNARY_OPS + __BINARY_OPS + __REDUCE_OPS + __OTHER
 
@@ -158,7 +169,7 @@ class Operation:
         raise NotImplementedError("Subclasses must override this method")
 
 
-class UnaryOp(Operation):  # LOG, TAN, SQRT, EXP
+class UnaryOp(Operation):  # TAN, SQRT
     """Base class to implement unary operations.
     """
     __slots__ = ["tensor", "parents", "out"]
@@ -304,6 +315,7 @@ class Add(BinaryOp):
             np.add(data_a, data_b, *args, **kwargs),
             parents=self.parents,
             is_leaf=False,
+            op_name=self.__repr__(),
         )
 
     def backward(self, gradient: "Tensor" = None):
@@ -389,6 +401,7 @@ class MatrixMultiplication(BinaryOp):
             np.matmul(data_a, data_b, *args, **kwargs),
             parents=self.parents,
             is_leaf=False,
+            op_name=self.__repr__(),
         )
 
     def backward(self, gradient: "Tensor" = None):
@@ -429,6 +442,7 @@ class Multiply(BinaryOp):
             np.multiply(data_a, data_b, *args, **kwargs),
             parents=self.parents,
             is_leaf=False,
+            op_name=self.__repr__(),
         )
 
     def backward(self, gradient: "Tensor" = None):
@@ -471,10 +485,27 @@ class Power(BinaryOp):
             is_leaf=False,
             parents=self.parents,
             track_gradient=self.track_gradient,
+            op_name=self.__repr__(),
         )
 
     def backward(self, gradient: "Tensor" = None):
-        raise NotImplementedError
+        # data_a is base and data_b is exponent
+        data_a, data_b = self.get_value()
+
+        grad_a = (data_b * np.power(data_a, data_b -1)) * gradient.numpy()
+        grad_b = (np.power(data_a, data_b) * np.log(data_a)) * gradient.numpy()
+
+        if data_a.ndim > data_b.ndim:
+            grad_b = self._collapse_grad(
+                t1=data_a, t2=data_b, to_collapse=grad_b
+            )
+
+        elif data_b.ndim > data_a.ndim:
+            grad_a = self._collapse_grad(
+                t1=data_b, t2=data_a, to_collapse=grad_a
+            )
+
+        self._set_gradients(Tensor(grad_a), Tensor(grad_b))
 
     def __repr__(self):
         return "Power(BinaryOp)"
@@ -487,7 +518,7 @@ def power(
     """
     return OperationRunner(Power, tensor_a, tensor_b).run(*args, **kwargs)
 
-# TODO: Maximum, Minimum, exp, Divide
+
 # -----------------------------------------------------------------------------
 class Maximum(BinaryOp):
     def forward(self, *args, **kwargs) -> "Tensor":
@@ -497,6 +528,7 @@ class Maximum(BinaryOp):
             is_leaf=False,
             parents=self.parents,
             track_gradient=self.track_gradient,
+            op_name=self.__repr__(),
         )
 
     def backward(self, gradient: "Tensor" = None):
@@ -558,6 +590,7 @@ class Minimum(BinaryOp):
             is_leaf=False,
             parents=self.parents,
             track_gradient=self.track_gradient,
+            op_name=self.__repr__(),
         )
 
     def backward(self, gradient: "Tensor" = None):
@@ -612,17 +645,49 @@ def minimum(
 
 
 # -----------------------------------------------------------------------------
+class Divide(BinaryOp):
+    def forward(self, *args, **kwargs) -> "Tensor":
+            data_a, data_b = self.get_value()
+            return Tensor(
+                np.divide(data_a, data_b, *args, **kwargs),
+                is_leaf=False,
+                track_gradient=self.track_gradient,
+                parents=self.parents,
+                op_name=self.__repr__(),
+            )
+
+    def backward(self, gradient: "Tensor" = None) -> "Tensor":
+        raise NotImplementedError("Not implement backward pass for 'Divide'")
+
+    def __repr__(self):
+        return "Divide(BinaryOp)"
+
+
+def divide(
+    tensor_a: "Tensor", tensor_b: "Tensor", *args, **kwargs
+) -> "Tensor":
+    """Returns a true division of the inputs, element-wise.
+    """
+    return OperationRunner(Divide, tensor_a, tensor_b).run(*args, **kwargs)
+
+
+# -----------------------------------------------------------------------------
 # ----------------------------- UNARY OPERATIONS ------------------------------
 # -----------------------------------------------------------------------------
 class Log(UnaryOp):
     def forward(self, *args, **kwargs):
         data = self.get_value()
         return Tensor(
-            np.log(data, *args, **kwargs), is_leaf=False, parents=self.parents
+            np.log(data, *args, **kwargs),
+            is_leaf=False,
+            parents=self.parents,
+            track_gradient=self.track_gradient,
+            op_name=self.__repr__(),
         )
 
     def backward(self, gradient: "Tensor" = None):
-        self._set_gradients(Tensor((1 / self.tensor.numpy()) * gradient))
+        data = self.get_value()
+        self._set_gradients(Tensor((1 / data) * gradient.numpy()))
 
     def __repr__(self) -> str:
         return "Log(UnaryOp)"
@@ -649,7 +714,13 @@ class Sigmoid(UnaryOp):
     def forward(self, *args, **kwargs):
         data = self.get_value()
         self.sigmoid = 1 / (1 + np.exp(-data, *args, **kwargs))
-        return Tensor(self.sigmoid, is_leaf=False, parents=self.parents)
+        return Tensor(
+            self.sigmoid,
+            is_leaf=False,
+            parents=self.parents,
+            track_gradient=self.track_gradient,
+            op_name=self.__repr__(),
+        )
 
     def backward(self, gradient: "Tensor" = None):
         self._set_gradients(
@@ -683,7 +754,9 @@ class Negative(UnaryOp):
         return Tensor(
             np.negative(self.get_value(), *args, **kwargs),
             parents=self.parents,
+            track_gradient=self.track_gradient,
             is_leaf=False,
+            op_name=self.__repr__(),
         )
 
     def backward(self, gradient: "Tensor" = None) -> None:
@@ -713,7 +786,11 @@ def negative(tensor: "Tensor", *args, **kwargs) -> "Tensor":
 class Sin(UnaryOp):
     def forward(self):
         return Tensor(
-            np.sin(self.get_value()), parents=self.parents, is_leaf=False
+            np.sin(self.get_value()),
+            parents=self.parents,
+            track_gradient=self.track_gradient,
+            is_leaf=False,
+            op_name=self.__repr__(),
         )
 
     def backward(self, gradient: "Tensor" = None) -> None:
@@ -724,6 +801,8 @@ class Sin(UnaryOp):
 
 
 def sin(tensor: "Tensor", *args, **kwargs) -> "Tensor":
+    """Sine element-wise.
+    """
     return OperationRunner(Sin, tensor).run(*args, **kwargs)
 
 
@@ -731,7 +810,11 @@ def sin(tensor: "Tensor", *args, **kwargs) -> "Tensor":
 class Cos(UnaryOp):
     def forward(self):
         return Tensor(
-            np.cos(self.get_value()), parents=self.parents, is_leaf=False
+            np.cos(self.get_value()),
+            parents=self.parents,
+            track_gradient=self.track_gradient,
+            is_leaf=False,
+            op_name=self.__repr__(),
         )
 
     def backward(self, gradient: "Tensor" = None) -> None:
@@ -745,6 +828,8 @@ class Cos(UnaryOp):
 
 
 def cos(tensor: "Tensor", *args, **kwargs) -> "Tensor":
+    """Cosine element-wise.
+    """
     return OperationRunner(Cos, tensor).run(*args, **kwargs)
 
 
@@ -756,6 +841,8 @@ class Reshape(UnaryOp):
             dtype=self.tensor.dtype,
             is_leaf=False,
             parents=self.parents,
+            track_gradient=self.track_gradient,
+            op_name=self.__repr__(),
         )
 
     def backward(self, gradient: "Tensor" = None) -> None:
@@ -769,8 +856,36 @@ class Reshape(UnaryOp):
         return "Reshape(UnaryOp)"
 
 
-def reshape(tensor: "Tensor", newshape, order='C'):
+def reshape(tensor: "Tensor", newshape, order='C') -> "Tensor":
+    """Gives a new shape to a Tensor without changing its data.
+    """
     return OperationRunner(Reshape, tensor, newshape=newshape, order=order)
+
+
+# -----------------------------------------------------------------------------
+class Exponential(UnaryOp):
+    def forward(self, *args, **kwargs) -> "Tensor":
+            data = self.get_value()
+            return Tensor(
+                np.exp(data, *args, **kwargs),
+                is_leaf=False,
+                track_gradient=self.track_gradient,
+                parents=self.parents,
+                op_name=self.__repr__(),
+            )
+
+    def backward(self, gradient: "Tensor" = None) -> "Tensor":
+        grad = self.out.numpy() * gradient.numpy()
+        self._set_gradients(Tensor(grad))
+
+    def __repr__(self):
+        return "Exponential(UnaryOp)"
+
+
+def exp(tensor: "Tensor", *args, **kwargs) -> "Tensor":
+    """Calculate the exponential of all elements in the input tensor.
+    """
+    return OperationRunner(Exponential, tensor).run(*args, **kwargs)
 
 
 # -----------------------------------------------------------------------------
@@ -781,7 +896,9 @@ class Max(ReduceOp):
         return Tensor(
             np.max(self.get_value(), *args, **kwargs),
             parents=self.parents,
+            track_gradient=self.track_gradient,
             is_leaf=False,
+            op_name=self.__repr__(),
         )
 
     def backward(self, gradient: "Tensor" = None):
@@ -790,7 +907,7 @@ class Max(ReduceOp):
         indices = np.unravel_index(data.argmax(), data.shape)
         grad = np.zeros_like(data)
         grad[indices] = 1
-        self._set_gradients(Tensor(grad * gradient))
+        self._set_gradients(Tensor(grad * gradient.numpy()))
 
     def __repr__(self):
         return "Max(ReduceOp)"
@@ -812,17 +929,18 @@ class Min(ReduceOp):
         return Tensor(
             np.min(self.get_value(), *args, **kwargs),
             parents=self.parents,
+            track_gradient=self.track_gradient,
             is_leaf=False,
+            op_name=self.__repr__(),
         )
 
     def backward(self, gradient: "Tensor" = None):
         # TODO: deal with axis != None
-        # TODO: gradient is Tensor, not a scaler or NumPy
         data = self.get_value()
         indices = np.unravel_index(data.argmin(), data.shape)
         grad = np.zeros_like(data)
         grad[indices] = 1
-        self._set_gradients(Tensor(grad * gradient))
+        self._set_gradients(Tensor(grad * gradient.numpy()))
 
     def __repr__(self):
         return "Min(ReduceOp)"
@@ -844,7 +962,9 @@ class Sum(ReduceOp):
         return Tensor(
             np.sum(self.get_value(), *args, **kwargs),
             parents=self.parents,
+            track_gradient=self.track_gradient,
             is_leaf=False,
+            op_name=self.__repr__(),
         )
 
     def backward(self, gradient: "Tensor" = None):
@@ -889,6 +1009,7 @@ class Slice(ReduceOp):
             is_leaf=False,
             track_gradient=self.track_gradient,
             parents=self.parents,
+            op_name=self.__repr__(),
         )
 
     def backward(self, gradient: "Tensor" = None):
@@ -929,6 +1050,51 @@ def empty_like(tensor: "Tensor", dtype=np.int32, **kwargs) -> "Tensor":
     return Tensor(np.empty_like(tensor.numpy(), dtype=dtype, **kwargs))
 
 
+def rand(shape: tuple, track_gradient: bool = False) -> "Tensor":
+    """Random values in a given shape.
+
+    Create a tensor of the given shape and populate it with random samples from
+    a uniform distribution over [0, 1).
+
+    Parameters
+    ----------
+    shape : tuple of ints
+        Shape of the generated tensor.
+    track_gradient : bool, optional, default: False
+        If True, the created tensor will be ready to track gradients.
+
+    Returns
+    -------
+    toydiff.Tensor
+        Generated tensor.
+    """
+    return Tensor(np.random.rand(*shape), track_gradient=track_gradient)
+
+
+def randn(shape: tuple, track_gradient: bool = False) -> "Tensor":
+    """Return a sample (or samples) from the "standard normal" distribution.
+
+    If positive int_like arguments are provided, randn generates a tensor of
+    shape (d0, d1, ..., dn), filled with random floats sampled from a
+    univariate "normal" (Gaussian) distribution of mean 0 and variance 1. A
+    single float randomly sampled from the distribution is returned if no
+    argument is provided.
+
+    Parameters
+    ----------
+    shape : tuple of ints
+        Shape of the generated tensor.
+    track_gradient : bool, optional, default: False
+        If True, the created tensor will be ready to track gradients.
+
+    Returns
+    -------
+    toydiff.Tensor
+        Generated tensor.
+    """
+    return Tensor(np.random.randn(*shape), track_gradient=track_gradient)
+
+
 # -----------------------------------------------------------------------------
 # ------------------------------- Tensor Class --------------------------------
 # -----------------------------------------------------------------------------
@@ -947,6 +1113,9 @@ class Tensor:
     parents : list of Tensor, optional, default: None
         Tensors that originated self. For example, the operation a + b = c will
         generate a Tensor c whose parents are a and b.
+    op_name : str
+        Name of the operation that generated self Tensor. Should be None for
+        leaf tensors.
 
     Attributes
     ----------
@@ -965,6 +1134,7 @@ class Tensor:
         "parents",
         "gradient",
         "backward_fn",
+        "op_name",
     ]
 
     def __init__(
@@ -974,12 +1144,18 @@ class Tensor:
         is_leaf: bool = True,
         track_gradient: bool = False,
         parents=None,
+        op_name=None,
     ):
+        if op_name is not None and is_leaf:
+            msg = f"An operation name '{op_name}' was given to a leaf tensor"
+            raise ValueError(msg)
+
         self.value = np.array(value, dtype=dtype)
         self.dtype = dtype
         self.is_leaf = is_leaf
         self.track_gradient = track_gradient
         self.parents = parents
+        self.op_name = op_name
 
         # attributes
         self.gradient: Tensor = None
@@ -1016,6 +1192,12 @@ class Tensor:
 
     def __rsub__(self, other):
         return subtract(other, self)
+
+    def __pow__(self, exponent):
+        return power(self, exponent)
+
+    def __rpow__(self, base):
+        return power(base, self)
 
     def __mul__(self, other):
         return multiply(self, other)
@@ -1055,9 +1237,8 @@ class Tensor:
 
     def __repr__(self):
         rpr_ = self.value.__repr__().replace("array", "Tensor")
-        if self.backward_fn is not None:
-            func_name = str(self.backward_fn).split(" ")[2]
-            func_name = f"<{func_name}>"
+        if self.op_name is not None:
+            func_name = f"{self.op_name}.Backward"
             rpr_ = f"{rpr_[:-1]}, backward_fn={func_name})"
         
         return rpr_
@@ -1096,7 +1277,10 @@ class Tensor:
         """Returns the internal numpy array."""
         return self.value
 
-    def reshape(self, newshape, order='C'):
+    def copy(self):  # also has backward
+        return NotImplementedError
+
+    def reshape(self, newshape, order='C') -> "Tensor":
         return reshape(self, newshape=newshape, order=order)
 
     def backward(self, gradient=None) -> None:
@@ -1105,7 +1289,7 @@ class Tensor:
         The backward pass will sort topologically all tensors and fill their
         gradients in reverse order until reaching the leaf nodes.
 
-        This function returns nothing; instead, the gradient of all tensors in
+        This function returns nothing; instead, the gradients of all tensors in
         the computational graph will be modified in-place.
 
         Parameters

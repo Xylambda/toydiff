@@ -121,9 +121,6 @@ class MatMul(BinaryOp):
         )
 
     def backward(self, gradient: "Tensor" = None):
-        if gradient is None:
-            gradient = self.get_gradient()
-
         grad_np = gradient.numpy()
         gradient_a = Tensor(grad_np @ self.tensor_b.numpy().T)
         gradient_b = Tensor(self.tensor_a.numpy().T @ grad_np)
