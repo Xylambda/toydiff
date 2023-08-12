@@ -836,10 +836,11 @@ class Reshape(UnaryOp):
         )
 
     def backward(self, gradient: Optional["Tensor"] = None) -> None:
-        grad = Tensor(
-            np.ones_like(self.get_value()) * gradient.numpy(),
-            dtype=self.tensor.dtype,
-        )
+        # original shape
+        or_shape = self.tensor.numpy().shape
+        grad_np = gradient.numpy().reshape(or_shape)
+
+        grad = Tensor(np.ones_like(self.get_value()) * grad_np)
         self._set_gradients(grad)
 
     def __repr__(self) -> str:
