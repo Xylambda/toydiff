@@ -787,7 +787,8 @@ class Sin(UnaryOp):
         )
 
     def backward(self, gradient: Optional["Tensor"] = None) -> None:
-        self._set_gradients(Tensor(np.cos(self.get_value()) * gradient))
+        grad = Tensor(np.cos(self.get_value()) * gradient.numpy())
+        self._set_gradients(grad)
 
     def __repr__(self) -> str:
         return "Sin(UnaryOp)"
@@ -810,9 +811,7 @@ class Cos(UnaryOp):
         )
 
     def backward(self, gradient: Optional["Tensor"] = None) -> None:
-        grad = Tensor(
-            -np.sin(self.get_value()) * gradient, dtype=self.tensor.dtype
-        )
+        grad = Tensor(-np.sin(self.get_value()) * gradient.numpy())
         self._set_gradients(grad)
 
     def __repr__(self) -> str:
@@ -849,7 +848,7 @@ class Reshape(UnaryOp):
 
 def reshape(tensor: "Tensor", newshape, order="C") -> "Tensor":
     """Gives a new shape to a Tensor without changing its data."""
-    return OperationRunner(Reshape, tensor, newshape=newshape, order=order)
+    return OperationRunner(Reshape, tensor).run(newshape=newshape, order=order)
 
 
 # -----------------------------------------------------------------------------
