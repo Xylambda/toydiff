@@ -2,7 +2,8 @@
 Pool of composed functions. Each function is created using the basic operations
 implemented in core.py
 """
-from toydiff.core import maximum, Tensor
+from toydiff.core import Tensor, maximum
+
 
 def conv1d():
     pass

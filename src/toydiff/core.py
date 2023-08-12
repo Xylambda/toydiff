@@ -21,13 +21,15 @@ The module is structured as follows:
     dunder/magic methods are used to ensure a smooth usage of the library.
 
 """
-from typing import List, Tuple, Union, Type, Literal, Optional
-
 from abc import abstractmethod
+from typing import List, Literal, Optional, Tuple, Type, Union
 
 import numpy as np
 
-from toydiff.exceptions import NullBackwardFunctionError, InplaceModificationError
+from toydiff.exceptions import (
+    InplaceModificationError,
+    NullBackwardFunctionError,
+)
 from toydiff.utils import topological_sort
 
 __UNARY_OPS = [
@@ -173,8 +175,8 @@ class Operation:
 
 
 class UnaryOp(Operation):  # TAN, SQRT
-    """Base class to implement unary operations.
-    """
+    """Base class to implement unary operations."""
+
     __slots__ = ["tensor", "parents", "out"]
 
     def __init__(self, tensor: "Tensor"):
@@ -189,7 +191,11 @@ class UnaryOp(Operation):  # TAN, SQRT
     def get_value(self) -> np.ndarray:
         return self.tensor.numpy()
 
-    def _set_gradients(self, gradient) -> None:  # TODO: if gradient is Not None, then we should add to accumulate gradients
+    def _set_gradients(
+        self, gradient
+    ) -> (
+        None
+    ):  # TODO: if gradient is Not None, then we should add to accumulate gradients
         if self.tensor.track_gradient:
             self.tensor.gradient = gradient
 
@@ -213,6 +219,7 @@ class BinaryOp(Operation):  # DIVIDE
     ----------
     parents : list of toydiff.Tensor
     """
+
     __slots__ = ["tensor_a", "tensor_b", "parents"]
 
     def __init__(self, tensor_a: "Tensor", tensor_b: "Tensor"):
@@ -262,8 +269,8 @@ class BinaryOp(Operation):  # DIVIDE
 
 
 class ReduceOp(UnaryOp):  # SUM, MAX, MIN
-    """Reduction operation.
-    """
+    """Reduction operation."""
+
     def __init__(self, tensor: "Tensor"):
         super().__init__(tensor=tensor)
 
@@ -400,6 +407,7 @@ class MatrixMultiplication(BinaryOp):
     function should be used to compute the matrix product of two tensors, since
     it will take care of making the appropiate checks and set the gradients.
     """
+
     def forward(self, *args, **kwargs) -> "Tensor":
         data_a, data_b = self.get_value()
         return Tensor(
@@ -476,8 +484,7 @@ class Multiply(BinaryOp):
 def multiply(
     tensor_a: "Tensor", tensor_b: "Tensor", *args, **kwargs
 ) -> "Tensor":
-    """Multiply two tensors element-wise.
-    """
+    """Multiply two tensors element-wise."""
     return OperationRunner(Multiply, tensor_a, tensor_b).run(*args, **kwargs)
 
 
@@ -497,7 +504,7 @@ class Power(BinaryOp):
         # data_a is base and data_b is exponent
         data_a, data_b = self.get_value()
 
-        grad_a = (data_b * np.power(data_a, data_b -1)) * gradient.numpy()
+        grad_a = (data_b * np.power(data_a, data_b - 1)) * gradient.numpy()
         grad_b = (np.power(data_a, data_b) * np.log(data_a)) * gradient.numpy()
 
         if data_a.ndim > data_b.ndim:
@@ -516,11 +523,8 @@ class Power(BinaryOp):
         return "Power(BinaryOp)"
 
 
-def power(
-    tensor_a: "Tensor", tensor_b: "Tensor", *args, **kwargs
-) -> "Tensor":
-    """First tensor elements raised to powers from second tensor, element-wise.
-    """
+def power(tensor_a: "Tensor", tensor_b: "Tensor", *args, **kwargs) -> "Tensor":
+    """First tensor elements raised to powers from second tensor, element-wise."""
     return OperationRunner(Power, tensor_a, tensor_b).run(*args, **kwargs)
 
 
@@ -546,7 +550,6 @@ class Maximum(BinaryOp):
 
         grad_b = base_grad
         grad_b[data_b > data_a] = 1
-
 
         if data_a.ndim > data_b.ndim:
             grad_a = grad_a * grad_np
@@ -586,6 +589,7 @@ def maximum(
     """
     return OperationRunner(Maximum, tensor_a, tensor_b).run(*args, **kwargs)
 
+
 # -----------------------------------------------------------------------------
 class Minimum(BinaryOp):
     def forward(self, *args, **kwargs) -> "Tensor":
@@ -608,7 +612,6 @@ class Minimum(BinaryOp):
 
         grad_b = base_grad
         grad_b[data_b < data_a] = 1
-
 
         if data_a.ndim > data_b.ndim:
             grad_a = grad_a * grad_np
@@ -656,9 +659,9 @@ def divide(
 
     Operation performed is tensor_a / tensor_b
     """
-    return OperationRunner(
-        Multiply, tensor_a, (tensor_b ** Tensor(-1))
-    ).run(*args, **kwargs)
+    return OperationRunner(Multiply, tensor_a, (tensor_b ** Tensor(-1))).run(
+        *args, **kwargs
+    )
 
 
 # -----------------------------------------------------------------------------
@@ -791,8 +794,7 @@ class Sin(UnaryOp):
 
 
 def sin(tensor: "Tensor", *args, **kwargs) -> "Tensor":
-    """Sine element-wise.
-    """
+    """Sine element-wise."""
     return OperationRunner(Sin, tensor).run(*args, **kwargs)
 
 
@@ -818,14 +820,13 @@ class Cos(UnaryOp):
 
 
 def cos(tensor: "Tensor", *args, **kwargs) -> "Tensor":
-    """Cosine element-wise.
-    """
+    """Cosine element-wise."""
     return OperationRunner(Cos, tensor).run(*args, **kwargs)
 
 
 # -----------------------------------------------------------------------------
 class Reshape(UnaryOp):
-    def forward(self, newshape, order='C'):
+    def forward(self, newshape, order="C"):
         return Tensor(
             np.reshape(self.get_value(), newshape=newshape, order=order),
             dtype=self.tensor.dtype,
@@ -846,23 +847,22 @@ class Reshape(UnaryOp):
         return "Reshape(UnaryOp)"
 
 
-def reshape(tensor: "Tensor", newshape, order='C') -> "Tensor":
-    """Gives a new shape to a Tensor without changing its data.
-    """
+def reshape(tensor: "Tensor", newshape, order="C") -> "Tensor":
+    """Gives a new shape to a Tensor without changing its data."""
     return OperationRunner(Reshape, tensor, newshape=newshape, order=order)
 
 
 # -----------------------------------------------------------------------------
 class Exponential(UnaryOp):
     def forward(self, *args, **kwargs) -> "Tensor":
-            data = self.get_value()
-            return Tensor(
-                np.exp(data, *args, **kwargs),
-                is_leaf=False,
-                track_gradient=self.track_gradient,
-                parents=self.parents,
-                op_name=self.__repr__(),
-            )
+        data = self.get_value()
+        return Tensor(
+            np.exp(data, *args, **kwargs),
+            is_leaf=False,
+            track_gradient=self.track_gradient,
+            parents=self.parents,
+            op_name=self.__repr__(),
+        )
 
     def backward(self, gradient: Optional["Tensor"] = None) -> "Tensor":
         grad = self.out.numpy() * gradient.numpy()
@@ -873,14 +873,14 @@ class Exponential(UnaryOp):
 
 
 def exp(tensor: "Tensor", *args, **kwargs) -> "Tensor":
-    """Calculate the exponential of all elements in the input tensor.
-    """
+    """Calculate the exponential of all elements in the input tensor."""
     return OperationRunner(Exponential, tensor).run(*args, **kwargs)
 
 
 # -----------------------------------------------------------------------------
 class Transpose(UnaryOp):
     __slots__ = ["axes"]
+
     def __init__(self, tensor):
         super().__init__(tensor)
         self.axes = None
@@ -894,7 +894,7 @@ class Transpose(UnaryOp):
             is_leaf=False,
             track_gradient=self.track_gradient,
             parents=self.parents,
-            op_name=self.__repr__()
+            op_name=self.__repr__(),
         )
 
     def backward(self, gradient: Optional["Tensor"] = None):
@@ -905,9 +905,7 @@ class Transpose(UnaryOp):
             grad_np = np.transpose(gradient.numpy())
         else:
             equivalence = dict(zip(axes, range(0, len(axes))))
-            inverted_axes = [
-                equivalence[ax] for ax in range(0, len(axes))
-            ]
+            inverted_axes = [equivalence[ax] for ax in range(0, len(axes))]
             grad_np = np.transpose(gradient.numpy(), inverted_axes)
 
         self._set_gradients(Tensor(np.ones_like(data) * grad_np))
@@ -1006,9 +1004,7 @@ class Sum(ReduceOp):
 
     def backward(self, gradient: Optional["Tensor"] = None):
         self._set_gradients(
-            Tensor(
-                gradient.numpy() * np.ones_like(self.get_value())
-            )
+            Tensor(gradient.numpy() * np.ones_like(self.get_value()))
         )
 
     def __repr__(self):
@@ -1034,6 +1030,7 @@ def sum(tensor: "Tensor", *args, **kwargs) -> "Tensor":
 # -----------------------------------------------------------------------------
 class Slice(ReduceOp):
     __slots__ = ["key"]
+
     def __init__(self, tensor):
         super().__init__(tensor)
         self.key = None
@@ -1052,9 +1049,7 @@ class Slice(ReduceOp):
     def backward(self, gradient: Optional["Tensor"] = None):
         grad = np.zeros_like(self.tensor.numpy())
         grad.__setitem__(self.key, 1)
-        self._set_gradients(
-            Tensor(grad * gradient.numpy())
-        )
+        self._set_gradients(Tensor(grad * gradient.numpy()))
 
     def __repr__(self):
         return "Slice(ReduceOp)"
@@ -1221,10 +1216,13 @@ class Tensor:
 
     def __setitem__(self, key, value):
         if self.__backward_called:
-            msg = "Cannot modify Tensor when backwad has been already called. Use 'detach' method to generate a new instance with same properties but no gradient"
+            msg = (
+                "Cannot modify Tensor when backwad has been already called."
+                " Use 'detach' method to generate a new instance with same"
+                " properties but no gradient")
             raise InplaceModificationError(msg)
 
-        # TODO: not sure if this is right
+        # TODO: not sure if this is right
         self.value.__setitem__(key, value)
 
     def __getitem__(self, key):
@@ -1347,7 +1345,9 @@ class Tensor:
     def copy(self):  # also has backward
         return NotImplementedError
 
-    def reshape(self, newshape: Tuple[int], order: Literal["C", "F", "A"] = 'C') -> "Tensor":
+    def reshape(
+        self, newshape: Tuple[int], order: Literal["C", "F", "A"] = "C"
+    ) -> "Tensor":
         return reshape(self, newshape=newshape, order=order)
 
     def backward(self, gradient: Optional["Tensor"] = None) -> None:
