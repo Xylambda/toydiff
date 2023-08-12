@@ -17,7 +17,7 @@ def conv3d():
 
 
 def relu(tensor: Tensor) -> Tensor:
-    return maximum(tensor, Tensor(0))
+    return maximum(tensor, Tensor(0))  # DISC: track_gradient=True ?
 
 
 def sigmoid():

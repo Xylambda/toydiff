@@ -21,11 +21,13 @@ The module is structured as follows:
     dunder/magic methods are used to ensure a smooth usage of the library.
 
 """
+from typing import List, Tuple, Union, Type, Literal, Optional
+
 from abc import abstractmethod
 
 import numpy as np
 
-from toydiff.exceptions import NullBackwardFunctionError
+from toydiff.exceptions import NullBackwardFunctionError, InplaceModificationError
 from toydiff.utils import topological_sort
 
 __UNARY_OPS = [
@@ -81,7 +83,7 @@ class Operation:
 
     __slots__ = ["out", "track_gradient"]
 
-    def __init__(self, track_gradient=False):
+    def __init__(self, track_gradient: bool = False):
         self.track_gradient: bool = track_gradient
 
         # filled in the forward pass
@@ -92,7 +94,7 @@ class Operation:
         self.out = out
         return out
 
-    def check_dtype(self, obj) -> None:
+    def check_dtype(self, obj: object) -> None:
         if not isinstance(obj, Tensor):
             msg = "Operations are supported only for toydiff.Tensor instances"
             raise TypeError(msg)
@@ -138,7 +140,7 @@ class Operation:
         """Helper method to set the gradients of the parent tensors."""
         raise NotImplementedError("Subclasses must override this method")
 
-    def _backward_fn(self, gradient = None) -> None:
+    def _backward_fn(self, gradient: Optional["Tensor"] = None) -> None:
         """Actual backward call.
 
         This method ensures the passed gradient is not None and then calls
@@ -155,7 +157,7 @@ class Operation:
         self.backward(gradient=gradient)
 
     @abstractmethod
-    def backward(self, gradient: "Tensor" = None) -> None:
+    def backward(self, gradient: Optional["Tensor"] = None) -> None:
         """Backward pass.
 
         Sets the gradient of this operation with respect to its operands times
@@ -184,10 +186,10 @@ class UnaryOp(Operation):  # TAN, SQRT
         self.tensor = tensor
         self.parents = [tensor]
 
-    def get_value(self):
+    def get_value(self) -> np.ndarray:
         return self.tensor.numpy()
 
-    def _set_gradients(self, gradient):  # TODO: if gradient is Not None, then we should add to accumulate gradients
+    def _set_gradients(self, gradient) -> None:  # TODO: if gradient is Not None, then we should add to accumulate gradients
         if self.tensor.track_gradient:
             self.tensor.gradient = gradient
 
@@ -312,7 +314,7 @@ class OperationRunner:
 # ----------------------------- BINARY OPERATIONS -----------------------------
 # -----------------------------------------------------------------------------
 class Add(BinaryOp):
-    def forward(self, *args, **kwargs):
+    def forward(self, *args, **kwargs) -> "Tensor":
         data_a, data_b = self.get_value()
         return Tensor(
             np.add(data_a, data_b, *args, **kwargs),
@@ -321,7 +323,7 @@ class Add(BinaryOp):
             op_name=self.__repr__(),
         )
 
-    def backward(self, gradient: "Tensor" = None):
+    def backward(self, gradient: Optional["Tensor"] = None) -> None:
         data_a, data_b = self.get_value()
         np_grad = gradient.numpy()
 
@@ -398,7 +400,7 @@ class MatrixMultiplication(BinaryOp):
     function should be used to compute the matrix product of two tensors, since
     it will take care of making the appropiate checks and set the gradients.
     """
-    def forward(self, *args, **kwargs):
+    def forward(self, *args, **kwargs) -> "Tensor":
         data_a, data_b = self.get_value()
         return Tensor(
             np.matmul(data_a, data_b, *args, **kwargs),
@@ -407,7 +409,7 @@ class MatrixMultiplication(BinaryOp):
             op_name=self.__repr__(),
         )
 
-    def backward(self, gradient: "Tensor" = None):
+    def backward(self, gradient: Optional["Tensor"] = None) -> None:
         grad_np = gradient.numpy()
         gradient_a = Tensor(grad_np @ self.tensor_b.numpy().T)
         gradient_b = Tensor(self.tensor_a.numpy().T @ grad_np)
@@ -448,7 +450,7 @@ class Multiply(BinaryOp):
             op_name=self.__repr__(),
         )
 
-    def backward(self, gradient: "Tensor" = None):
+    def backward(self, gradient: Optional["Tensor"] = None):
         data_a, data_b = self.get_value()
         np_grad = gradient.numpy()
 
@@ -491,7 +493,7 @@ class Power(BinaryOp):
             op_name=self.__repr__(),
         )
 
-    def backward(self, gradient: "Tensor" = None):
+    def backward(self, gradient: Optional["Tensor"] = None):
         # data_a is base and data_b is exponent
         data_a, data_b = self.get_value()
 
@@ -534,7 +536,7 @@ class Maximum(BinaryOp):
             op_name=self.__repr__(),
         )
 
-    def backward(self, gradient: "Tensor" = None):
+    def backward(self, gradient: Optional["Tensor"] = None):
         data_a, data_b = self.get_value()
         grad_np = gradient.numpy()
         base_grad = np.isclose(data_a, data_b) * 0.5
@@ -596,7 +598,7 @@ class Minimum(BinaryOp):
             op_name=self.__repr__(),
         )
 
-    def backward(self, gradient: "Tensor" = None):
+    def backward(self, gradient: Optional["Tensor"] = None):
         data_a, data_b = self.get_value()
         grad_np = gradient.numpy()
         base_grad = np.isclose(data_a, data_b) * 0.5
@@ -647,31 +649,16 @@ def minimum(
     return OperationRunner(Minimum, tensor_a, tensor_b).run(*args, **kwargs)
 
 
-# -----------------------------------------------------------------------------
-class Divide(BinaryOp):
-    def forward(self, *args, **kwargs) -> "Tensor":
-            data_a, data_b = self.get_value()
-            return Tensor(
-                np.divide(data_a, data_b, *args, **kwargs),
-                is_leaf=False,
-                track_gradient=self.track_gradient,
-                parents=self.parents,
-                op_name=self.__repr__(),
-            )
-
-    def backward(self, gradient: "Tensor" = None) -> "Tensor":
-        raise NotImplementedError("Not implement backward pass for 'Divide'")
-
-    def __repr__(self):
-        return "Divide(BinaryOp)"
-
-
 def divide(
     tensor_a: "Tensor", tensor_b: "Tensor", *args, **kwargs
 ) -> "Tensor":
     """Returns a true division of the inputs, element-wise.
+
+    Operation performed is tensor_a / tensor_b
     """
-    return OperationRunner(Divide, tensor_a, tensor_b).run(*args, **kwargs)
+    return OperationRunner(
+        Multiply, tensor_a, (tensor_b ** Tensor(-1))
+    ).run(*args, **kwargs)
 
 
 # -----------------------------------------------------------------------------
@@ -688,7 +675,7 @@ class Log(UnaryOp):
             op_name=self.__repr__(),
         )
 
-    def backward(self, gradient: "Tensor" = None):
+    def backward(self, gradient: Optional["Tensor"] = None):
         data = self.get_value()
         self._set_gradients(Tensor((1 / data) * gradient.numpy()))
 
@@ -725,7 +712,7 @@ class Sigmoid(UnaryOp):
             op_name=self.__repr__(),
         )
 
-    def backward(self, gradient: "Tensor" = None):
+    def backward(self, gradient: Optional["Tensor"] = None):
         self._set_gradients(
             Tensor((self.sigmoid * (1 - self.sigmoid)) * gradient)
         )
@@ -762,7 +749,7 @@ class Negative(UnaryOp):
             op_name=self.__repr__(),
         )
 
-    def backward(self, gradient: "Tensor" = None) -> None:
+    def backward(self, gradient: Optional["Tensor"] = None) -> None:
         self._set_gradients(Tensor(-np.ones_like(self.get_value()) * gradient))
 
     def __repr__(self) -> str:
@@ -796,7 +783,7 @@ class Sin(UnaryOp):
             op_name=self.__repr__(),
         )
 
-    def backward(self, gradient: "Tensor" = None) -> None:
+    def backward(self, gradient: Optional["Tensor"] = None) -> None:
         self._set_gradients(Tensor(np.cos(self.get_value()) * gradient))
 
     def __repr__(self) -> str:
@@ -820,7 +807,7 @@ class Cos(UnaryOp):
             op_name=self.__repr__(),
         )
 
-    def backward(self, gradient: "Tensor" = None) -> None:
+    def backward(self, gradient: Optional["Tensor"] = None) -> None:
         grad = Tensor(
             -np.sin(self.get_value()) * gradient, dtype=self.tensor.dtype
         )
@@ -848,7 +835,7 @@ class Reshape(UnaryOp):
             op_name=self.__repr__(),
         )
 
-    def backward(self, gradient: "Tensor" = None) -> None:
+    def backward(self, gradient: Optional["Tensor"] = None) -> None:
         grad = Tensor(
             np.ones_like(self.get_value()) * gradient.numpy(),
             dtype=self.tensor.dtype,
@@ -877,7 +864,7 @@ class Exponential(UnaryOp):
                 op_name=self.__repr__(),
             )
 
-    def backward(self, gradient: "Tensor" = None) -> "Tensor":
+    def backward(self, gradient: Optional["Tensor"] = None) -> "Tensor":
         grad = self.out.numpy() * gradient.numpy()
         self._set_gradients(Tensor(grad))
 
@@ -910,7 +897,7 @@ class Transpose(UnaryOp):
             op_name=self.__repr__()
         )
 
-    def backward(self, gradient: "Tensor" = None):
+    def backward(self, gradient: Optional["Tensor"] = None):
         axes = self.axes
         data = self.get_value()
 
@@ -951,7 +938,7 @@ class Max(ReduceOp):
             op_name=self.__repr__(),
         )
 
-    def backward(self, gradient: "Tensor" = None):
+    def backward(self, gradient: Optional["Tensor"] = None):
         # TODO: deal with axis != None
         data = self.get_value()
         indices = np.unravel_index(data.argmax(), data.shape)
@@ -984,7 +971,7 @@ class Min(ReduceOp):
             op_name=self.__repr__(),
         )
 
-    def backward(self, gradient: "Tensor" = None):
+    def backward(self, gradient: Optional["Tensor"] = None):
         # TODO: deal with axis != None
         data = self.get_value()
         indices = np.unravel_index(data.argmin(), data.shape)
@@ -1017,7 +1004,7 @@ class Sum(ReduceOp):
             op_name=self.__repr__(),
         )
 
-    def backward(self, gradient: "Tensor" = None):
+    def backward(self, gradient: Optional["Tensor"] = None):
         self._set_gradients(
             Tensor(
                 gradient.numpy() * np.ones_like(self.get_value())
@@ -1062,7 +1049,7 @@ class Slice(ReduceOp):
             op_name=self.__repr__(),
         )
 
-    def backward(self, gradient: "Tensor" = None):
+    def backward(self, gradient: Optional["Tensor"] = None):
         grad = np.zeros_like(self.tensor.numpy())
         grad.__setitem__(self.key, 1)
         self._set_gradients(
@@ -1100,7 +1087,7 @@ def empty_like(tensor: "Tensor", dtype=np.int32, **kwargs) -> "Tensor":
     return Tensor(np.empty_like(tensor.numpy(), dtype=dtype, **kwargs))
 
 
-def rand(shape: tuple, track_gradient: bool = False) -> "Tensor":
+def rand(shape: Tuple[int], track_gradient: bool = False) -> "Tensor":
     """Random values in a given shape.
 
     Create a tensor of the given shape and populate it with random samples from
@@ -1121,7 +1108,7 @@ def rand(shape: tuple, track_gradient: bool = False) -> "Tensor":
     return Tensor(np.random.rand(*shape), track_gradient=track_gradient)
 
 
-def randn(shape: tuple, track_gradient: bool = False) -> "Tensor":
+def randn(shape: Tuple[int], track_gradient: bool = False) -> "Tensor":
     """Return a sample (or samples) from the "standard normal" distribution.
 
     If positive int_like arguments are provided, randn generates a tensor of
@@ -1185,16 +1172,20 @@ class Tensor:
         "gradient",
         "backward_fn",
         "op_name",
+        "__size",
+        "__shape",
+        "__ndim",
+        "__backward_called",
     ]
 
     def __init__(
         self,
         value: object,
-        dtype = np.float32,
+        dtype: Union[str, Type[np.dtype]] = np.float32,
         is_leaf: bool = True,
         track_gradient: bool = False,
-        parents=None,
-        op_name=None,
+        parents: List["Tensor"] = None,
+        op_name: str = None,
     ):
         if op_name is not None and is_leaf:
             msg = f"An operation name '{op_name}' was given to a leaf tensor"
@@ -1210,13 +1201,30 @@ class Tensor:
         # attributes
         self.gradient: Tensor = None
         self.backward_fn: callable = None
+        self.__size = self.value.size
+        self.__shape = self.value.shape
+        self.__ndim = self.value.ndim
+        self.__backward_called = False
+
+    def detach(self) -> "Tensor":
+        """Detach tensor from the graph.
+
+        Generates a new instance (leaf) Tensor with no gradients and no
+        parents. The attribute `track_gradient` will be set to False.
+
+        The internal numpy array will also be copied.
+        """
+        return Tensor(self.value.copy(), dtype=self.dtype, is_leaf=True)
 
     def __iter__(self):
         return self.value.__iter__()  # should return tensors, not arrays
 
     def __setitem__(self, key, value):
-        if self.is_leaf:  # TODO: fix this
-            raise Exception
+        if self.__backward_called:
+            msg = "Cannot modify Tensor when backwad has been already called. Use 'detach' method to generate a new instance with same properties but no gradient"
+            raise InplaceModificationError(msg)
+
+        # TODO: not sure if this is right
         self.value.__setitem__(key, value)
 
     def __getitem__(self, key):
@@ -1227,6 +1235,12 @@ class Tensor:
 
     def __pow__(self, exponent):
         return power(self, exponent)
+
+    def __truediv__(self, other):
+        return divide(self, other)
+
+    def __rtruediv__(self, other):
+        return divide(other, self)
 
     def __rpow__(self, base):
         return power(base, self)
@@ -1289,9 +1303,9 @@ class Tensor:
         rpr_ = self.value.__repr__().replace("array", "Tensor")[:-1]
         if self.op_name is not None:
             func_name = f"{self.op_name}.Backward"
-            rpr_ = f"{rpr_}, backward_fn=<{func_name}>"
-
-        rpr_ = f"{rpr_}, track_gradient={self.track_gradient})"
+            rpr_ = f"{rpr_}, backward_fn=<{func_name}>)"
+        else:
+            rpr_ = f"{rpr_}, track_gradient={self.track_gradient})"
         return rpr_
 
     def __len__(self):
@@ -1299,15 +1313,24 @@ class Tensor:
 
     @property
     def size(self):
-        return self.value.size
+        return self.__size
 
     @property
     def shape(self):
-        return self.value.shape
+        return self.__shape
 
     @property
     def ndim(self):
-        return self.value.ndim
+        return self.__ndim
+
+    @property
+    def backward_called(self):
+        """If True, the backward pass has already been called on this tensor"""
+        return self.__backward_called
+
+    @backward_called.setter
+    def backward_called(self, val: bool):
+        self.__backward_called = val
 
     @property
     def T(self):
@@ -1324,10 +1347,10 @@ class Tensor:
     def copy(self):  # also has backward
         return NotImplementedError
 
-    def reshape(self, newshape, order='C') -> "Tensor":
+    def reshape(self, newshape: Tuple[int], order: Literal["C", "F", "A"] = 'C') -> "Tensor":
         return reshape(self, newshape=newshape, order=order)
 
-    def backward(self, gradient=None) -> None:
+    def backward(self, gradient: Optional["Tensor"] = None) -> None:
         """Backward pass starting from self Tensor.
 
         The backward pass will sort topologically all tensors and fill their
@@ -1353,6 +1376,7 @@ class Tensor:
 
             if tensor.backward_fn is not None:
                 tensor.backward_fn()
+                tensor.backward_called = True
             else:
                 msg = (
                     "Attempted to call 'backward' on a tensor with"
