@@ -1,3 +1,7 @@
+"""
+Useful utilities for the use of toydiff.
+"""
+
 __all__ = ["topological_sort"]
 
 

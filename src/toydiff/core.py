@@ -26,7 +26,7 @@ from abc import abstractmethod
 import numpy as np
 
 from toydiff.exceptions import NullBackwardFunctionError
-from toydiff.utils.graph import topological_sort
+from toydiff.utils import topological_sort
 
 __UNARY_OPS = [
     "log",
@@ -36,6 +36,7 @@ __UNARY_OPS = [
     "cos",
     "reshape",
     "exp",
+    "transpose",
 ]
 
 __BINARY_OPS = [
@@ -226,29 +227,31 @@ class BinaryOp(Operation):  # DIVIDE
 
         self.parents = [self.tensor_a, self.tensor_b]
 
-    def get_value(self):
+    def get_value(self) -> np.ndarray:
         return self.tensor_a.numpy(), self.tensor_b.numpy()
 
-    def _collapse_grad(self, t1, t2, to_collapse):
+    def _collapse_grad(
+        self, t1: np.ndarray, t2: np.ndarray, to_collapse: np.ndarray
+    ) -> np.ndarray:
         """Helps to collapse the gradient when dimensions do not match but
         forward operation broadcasted the input tensors.
 
         Parameters
         ----------
-        t1 : toydiff.Tensor
-        t2 : toydiff.Tensor
-        to_collapse : toydiff.Tensor
+        t1 : numpy.ndarray
+        t2 : numpy.ndarray
+        to_collapse : numpy.ndarray
         """
         diff_dims = t1.ndim - t2.ndim
         for _ in range(diff_dims):
             to_collapse = to_collapse.sum(axis=0)
 
         if t2.size == 1:
-            to_collapse = to_collapse.sum()
+            to_collapse = to_collapse.sum(keepdims=True)
 
         return to_collapse
 
-    def _set_gradients(self, gradient_a, gradient_b):
+    def _set_gradients(self, gradient_a, gradient_b) -> None:
         if self.tensor_a.track_gradient:
             self.tensor_a.gradient = gradient_a
 
@@ -889,6 +892,53 @@ def exp(tensor: "Tensor", *args, **kwargs) -> "Tensor":
 
 
 # -----------------------------------------------------------------------------
+class Transpose(UnaryOp):
+    __slots__ = ["axes"]
+    def __init__(self, tensor):
+        super().__init__(tensor)
+        self.axes = None
+
+    def forward(self, axes=None):
+        data = self.get_value()
+        self.axes = axes
+        return Tensor(
+            np.transpose(data, axes=axes),
+            dtype=self.tensor.dtype,
+            is_leaf=False,
+            track_gradient=self.track_gradient,
+            parents=self.parents,
+            op_name=self.__repr__()
+        )
+
+    def backward(self, gradient: "Tensor" = None):
+        axes = self.axes
+        data = self.get_value()
+
+        if axes is None:
+            grad_np = np.transpose(gradient.numpy())
+        else:
+            equivalence = dict(zip(axes, range(0, len(axes))))
+            inverted_axes = [
+                equivalence[ax] for ax in range(0, len(axes))
+            ]
+            grad_np = np.transpose(gradient.numpy(), inverted_axes)
+
+        self._set_gradients(Tensor(np.ones_like(data) * grad_np))
+
+    def __repr__(self):
+        return "Transpose(ReduceOp)"
+
+
+def transpose(tensor: "Tensor", axes: tuple = None) -> "Tensor":
+    """Returns a tensor with axes transposed.
+
+    For a 1-D tensor, this returns an unchanged view of the original tensor, as
+    a transposed vector is simply the same vector.
+    """
+    return OperationRunner(Transpose, tensor).run(axes=axes)
+
+
+# -----------------------------------------------------------------------------
 # ----------------------------- REDUCE OPERATIONS -----------------------------
 # -----------------------------------------------------------------------------
 class Max(ReduceOp):
@@ -1236,11 +1286,12 @@ class Tensor:
         return sigmoid(self, *args, **kwargs)
 
     def __repr__(self):
-        rpr_ = self.value.__repr__().replace("array", "Tensor")
+        rpr_ = self.value.__repr__().replace("array", "Tensor")[:-1]
         if self.op_name is not None:
             func_name = f"{self.op_name}.Backward"
-            rpr_ = f"{rpr_[:-1]}, backward_fn={func_name})"
-        
+            rpr_ = f"{rpr_}, backward_fn=<{func_name}>"
+
+        rpr_ = f"{rpr_}, track_gradient={self.track_gradient})"
         return rpr_
 
     def __len__(self):
@@ -1260,14 +1311,7 @@ class Tensor:
 
     @property
     def T(self):
-        # use reshape or make permute function
-        return Tensor(
-            self.value.T,
-            dtype=self.dtype,
-            is_leaf=self.is_leaf,
-            track_gradient=self.track_gradient,
-            parents=self.parents
-        )
+        return transpose(self)
 
     def zero_grad(self) -> None:
         """Zeroes the gradient attribute of self tensor."""

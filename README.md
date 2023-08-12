@@ -29,12 +29,7 @@ pip install -e toydiff/. -r toydiff/requirements-dev.txt
 
 ## Tests
 To run test, you must install the library as a `developer`.
-```bash
-cd toydiff/
-sh run_tests.sh
-```
 
-alternatively:
 ```bash
 cd toydiff/
 pytest -v tests/
@@ -58,7 +53,7 @@ The use is almost the same as the one you would expect from PyTorch:
 Variable `e` is a Tensor that allows to backpropagate:
 ```python
 >>> e
->>> Tensor(-4.30126, dtype=float32, backward_fn=<Sum.backward>)
+>>> Tensor(-4.30126, dtype=float32, backward_fn=<Sum(ReduceOp).Backward>)
 >>> e.backward()  # can pass a gradient tensor too if needed
 >>> a.gradient
 Tensor([[1.539179  , 3.2685497 , 0.8082636 ],
@@ -66,8 +61,8 @@ Tensor([[1.539179  , 3.2685497 , 0.8082636 ],
        [1.768115  , 3.879517  , 0.83321786]], dtype=float32)
 ```
 
-The library also tracks intermediate gradients by default, no need to perform
-extra steps to do so:
+The library also tracks intermediate gradients by default, withot the need to
+perform extra steps to do so:
 
 ```python
 >>> d.gradient
@@ -89,7 +84,7 @@ We first need to decide which type of operation we want; there are 3 types:
 * Binary: f(a, b) = c. e.g. add, matmul.
 
 A matrix multiplication operation is a binary operation, so we need to extend
-the corresponding class to create out own:
+the corresponding class to create our own:
 
 
 ```python
@@ -102,7 +97,7 @@ only the `forward`, `backward` and `__repr__` methods:
 * The `forward` method must contain the implementation of the operation,
 and the output must be wrapped in a Tensor Class. The parameters `parents`
 and `track_gradient` should be filled with the ones provide by the base
-class, and the parameter `is_leaf` must be set to True, since the output
+class, and the parameter `is_leaf` must be set to False, since the output
 tensor is not a leaf node of the graph.
 
 * The `backward` pass implemets the gradient calculation for the operands
