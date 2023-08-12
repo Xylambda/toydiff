@@ -21,6 +21,8 @@ The module is structured as follows:
     dunder/magic methods are used to ensure a smooth usage of the library.
 
 """
+import warnings
+
 from abc import abstractmethod
 from typing import List, Literal, Optional, Tuple, Type, Union
 
@@ -418,9 +420,10 @@ class MatrixMultiplication(BinaryOp):
         )
 
     def backward(self, gradient: Optional["Tensor"] = None) -> None:
+        data_a, data_b = self.get_value()
         grad_np = gradient.numpy()
-        gradient_a = Tensor(grad_np @ self.tensor_b.numpy().T)
-        gradient_b = Tensor(self.tensor_a.numpy().T @ grad_np)
+        gradient_a = Tensor(grad_np @ data_b.T)
+        gradient_b = Tensor(data_a.T @ grad_np)
         self._set_gradients(gradient_a, gradient_b)
 
     def __repr__(self):
@@ -595,7 +598,7 @@ class Minimum(BinaryOp):
     def forward(self, *args, **kwargs) -> "Tensor":
         data_a, data_b = self.get_value()
         return Tensor(
-            np.maximum(data_a, data_b, *args, **kwargs),
+            np.minimum(data_a, data_b, *args, **kwargs),
             is_leaf=False,
             parents=self.parents,
             track_gradient=self.track_gradient,
@@ -1365,6 +1368,13 @@ class Tensor:
             Starting gradient. If None, a gradient Tensor of shape equal to
             self tensor shape will be passed.
         """
+        if self.is_leaf:
+            warn = (
+                "Calling 'backward' on a leaf tensor will have no effect other"
+                " than filling its gradient with ones"
+            )
+            warnings.warn(warn)
+
         if gradient is None:
             gradient = Tensor(np.ones_like(self.value))
 

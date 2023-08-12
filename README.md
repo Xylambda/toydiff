@@ -61,7 +61,7 @@ Tensor([[1.539179  , 3.2685497 , 0.8082636 ],
        [1.768115  , 3.879517  , 0.83321786]], dtype=float32)
 ```
 
-The library also tracks intermediate gradients by default, withot the need to
+The library also tracks intermediate gradients by default, without the need to
 perform extra steps to do so:
 
 ```python
