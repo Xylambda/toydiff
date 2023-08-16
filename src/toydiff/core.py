@@ -28,6 +28,8 @@ from typing import List, Literal, Optional, Tuple, Type, Union
 
 import numpy as np
 
+from scipy.special import expit
+
 from toydiff.exceptions import (
     InplaceModificationError,
     NullBackwardFunctionError,
@@ -208,7 +210,7 @@ class UnaryOp(Operation):  # TAN, SQRT
             self.tensor.gradient = gradient
 
 
-class BinaryOp(Operation):  # DIVIDE
+class BinaryOp(Operation):
     """Base class to implement binary operations.
 
     The method `get_value` will return the NumPy arrays of the tensor_a and
@@ -746,7 +748,7 @@ class Sigmoid(UnaryOp):
 
     def forward(self, *args, **kwargs):
         data = self.get_value()
-        self.sigmoid = 1 / (1 + np.exp(-data, *args, **kwargs))
+        self.sigmoid = expit(data, *args, **kwargs)
         return Tensor(
             self.sigmoid,
             is_leaf=False,
@@ -1143,7 +1145,13 @@ class Slice(ReduceOp):
 
 # -----------------------------------------------------------------------------
 class Mean(ReduceOp):
+    __slots__ = ["axis"]
+    def __init__(self, tensor: "Tensor"):
+        super().__init__(tensor)
+        self.axis = None
+
     def forward(self, axis=None, keepdims=False):
+        self.axis = axis
         return Tensor(
             np.mean(self.get_value(), axis=axis, keepdims=keepdims),
             is_leaf=False,
@@ -1153,7 +1161,24 @@ class Mean(ReduceOp):
         )
     
     def backward(self, gradient: Optional["Tensor"] = None):
-        raise NotImplementedError
+        data = self.get_value()
+        shape = data.shape
+        if self.axis is None:
+            n = data.size
+        else:
+            n = shape[self.axis]
+
+        # TODO: inefficient algorithm, find alternatives
+        grad_np = gradient.numpy()
+        ndims = data.ndim
+        if ndims > 1 and self.out.ndim != 0:
+            i = 1
+            while i < (ndims - grad_np.ndim):
+                grad_np = np.expand_dims(grad_np, i)
+                i += 1
+
+        grad = np.ones_like(data) * (1 / n)
+        self._set_gradients(Tensor(grad_np * grad))
 
     def __repr__(self):
         return "Mean(ReduceOp)"
@@ -1195,28 +1220,58 @@ def std(
 # -----------------------------------------------------------------------------
 # ------------------------------ OTHER FUNCTIONS ------------------------------
 # -----------------------------------------------------------------------------
-def ones(shape: Tuple[int], dtype=np.int32, **kwargs) -> "Tensor":
-    return Tensor(np.ones(shape=shape, dtype=dtype, **kwargs))
+def ones(
+    shape: Tuple[int], dtype=np.int32, track_gradient=False, **kwargs
+) -> "Tensor":
+    return Tensor(
+        np.ones(shape=shape, dtype=dtype, **kwargs),
+        track_gradient=track_gradient
+    )
 
 
-def ones_like(tensor: "Tensor", dtype=np.int32, **kwargs) -> "Tensor":
-    return Tensor(np.ones_like(tensor.numpy(), dtype=dtype, **kwargs))
+def ones_like(
+    tensor: "Tensor", dtype=np.int32, track_gradient=False,  **kwargs
+) -> "Tensor":
+    return Tensor(
+        np.ones_like(tensor.numpy(), dtype=dtype, **kwargs),
+        track_gradient=track_gradient,
+    )
 
 
-def zeros(shape: Tuple[int], dtype=np.int32, **kwargs) -> "Tensor":
-    return Tensor(np.zeros(shape=shape, dtype=dtype, **kwargs))
+def zeros(
+    shape: Tuple[int], dtype=np.int32, track_gradient=False,  **kwargs
+) -> "Tensor":
+    return Tensor(
+        np.zeros(shape=shape, dtype=dtype, **kwargs),
+        track_gradient=track_gradient
+    )
 
 
-def zeros_like(tensor: "Tensor", dtype=np.int32, **kwargs) -> "Tensor":
-    return Tensor(np.zeros_like(tensor.numpy(), dtype=dtype, **kwargs))
+def zeros_like(
+    tensor: "Tensor", dtype=np.int32, track_gradient=False, **kwargs
+) -> "Tensor":
+    return Tensor(
+        np.zeros_like(tensor.numpy(), dtype=dtype, **kwargs),
+        track_gradient=track_gradient,
+    )
 
 
-def empty(shape: Tuple[int], dtype=np.int32, **kwargs) -> "Tensor":
-    return Tensor(np.empty(shape=shape, dtype=dtype, **kwargs))
+def empty(
+    shape: Tuple[int], dtype=np.int32, track_gradient=False,  **kwargs
+) -> "Tensor":
+    return Tensor(
+        np.empty(shape=shape, dtype=dtype, **kwargs),
+        track_gradient=track_gradient,
+    )
 
 
-def empty_like(tensor: "Tensor", dtype=np.int32, **kwargs) -> "Tensor":
-    return Tensor(np.empty_like(tensor.numpy(), dtype=dtype, **kwargs))
+def empty_like(
+    tensor: "Tensor", dtype=np.int32, track_gradient=False,  **kwargs
+) -> "Tensor":
+    return Tensor(
+        np.empty_like(tensor.numpy(), dtype=dtype, **kwargs),
+        track_gradient=track_gradient,
+    )
 
 
 def rand(shape: Tuple[int], track_gradient: bool = False) -> "Tensor":

@@ -12,5 +12,5 @@ def relu(tensor: Tensor) -> Tensor:
     return maximum(tensor, 0)
 
 
-def sigmoid():
-    pass
+def sigmoid(tensor: Tensor) -> Tensor:
+    return tensor.sigmoid()
