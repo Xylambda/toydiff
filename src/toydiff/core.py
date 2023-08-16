@@ -1184,7 +1184,22 @@ class Mean(ReduceOp):
         return "Mean(ReduceOp)"
 
 
-def mean(tensor: "Tensor", axis: Optional[int] = None, keepdims: bool = False):
+def mean(
+    tensor: "Tensor", axis: Optional[int] = None, keepdims: bool = False
+) -> "Tensor":
+    """Compute the arithmetic mean along the specified axis.
+
+    Parameters
+    ----------
+    tensor : toydiff.Tensor
+    axis : int, optional, default: None
+        Axis or axes along which the means are computed. The default is to
+        compute the mean of the flattened array.
+    keepdims : bool, optional, default: False
+        If this is set to True, the axes which are reduced are left in the
+        result as dimensions with size one. With this option, the result will
+        broadcast correctly against the input array
+    """
     return OperationRunner(Mean, tensor).run(axis=axis, keepdims=keepdims)
 
 
