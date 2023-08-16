@@ -1,6 +1,7 @@
 """ Small automatic differentiation package for scalars. """
 
 # relative subpacackges import
+from . import nn
 from . import utils
 from ._version import get_versions
 
@@ -9,6 +10,6 @@ del get_versions
 
 from toydiff.core import *
 
-from . import exceptions, functional
+from . import exceptions
 
-__all__ = ["exceptions", "utils", "functional", "Tensor"]
+__all__ = ["exceptions", "utils", "nn", "Tensor"]

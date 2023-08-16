@@ -31,6 +31,7 @@ import numpy as np
 from toydiff.exceptions import (
     InplaceModificationError,
     NullBackwardFunctionError,
+    ZeroGradientError,
 )
 from toydiff.utils import topological_sort
 
@@ -56,7 +57,7 @@ __BINARY_OPS = [
     "divide",
 ]
 
-__REDUCE_OPS = ["max", "min", "sum"]
+__REDUCE_OPS = ["max", "min", "sum", "mean", "std"]
 
 # other functions of this module
 __OTHER = [
@@ -98,10 +99,15 @@ class Operation:
         self.out = out
         return out
 
-    def check_dtype(self, obj: object) -> None:
+    def check_dtype_and_cast(self, obj: object, cast: bool = True) -> None:
         if not isinstance(obj, Tensor):
-            msg = "Operations are supported only for toydiff.Tensor instances"
-            raise TypeError(msg)
+            if cast:
+                return Tensor(obj, is_leaf=True, track_gradient=False)
+            else:
+                msg = "Operations are supported only for toydiff.Tensor instances"
+                raise TypeError(msg)
+        else:
+            return obj
 
     def get_gradient(self) -> "Tensor":
         """
@@ -182,7 +188,7 @@ class UnaryOp(Operation):  # TAN, SQRT
     __slots__ = ["tensor", "parents", "out"]
 
     def __init__(self, tensor: "Tensor"):
-        self.check_dtype(tensor)
+        tensor = self.check_dtype_and_cast(tensor)
 
         track_gradient = tensor.track_gradient
         super().__init__(track_gradient=track_gradient)
@@ -225,8 +231,8 @@ class BinaryOp(Operation):  # DIVIDE
     __slots__ = ["tensor_a", "tensor_b", "parents"]
 
     def __init__(self, tensor_a: "Tensor", tensor_b: "Tensor"):
-        self.check_dtype(tensor_a)
-        self.check_dtype(tensor_b)
+        tensor_a = self.check_dtype_and_cast(tensor_a)
+        tensor_b = self.check_dtype_and_cast(tensor_b)
 
         if tensor_a.track_gradient or tensor_b.track_gradient:
             track_gradient = True
@@ -270,7 +276,7 @@ class BinaryOp(Operation):  # DIVIDE
             self.tensor_b.gradient = gradient_b
 
 
-class ReduceOp(UnaryOp):  # SUM, MAX, MIN
+class ReduceOp(UnaryOp):
     """Reduction operation."""
 
     def __init__(self, tensor: "Tensor"):
@@ -487,8 +493,40 @@ class Multiply(BinaryOp):
 def multiply(
     tensor_a: "Tensor", tensor_b: "Tensor", *args, **kwargs
 ) -> "Tensor":
-    """Multiply two tensors element-wise."""
+    """Multiply two tensors element-wise.
+
+    Paremeters
+    ----------
+    tensor_a : toydiff.Tensor
+    tensor_b : toydiff.Tensor
+
+    Returns
+    -------
+    toydiff.Tensor
+    """
     return OperationRunner(Multiply, tensor_a, tensor_b).run(*args, **kwargs)
+
+
+def divide(
+    tensor_a: "Tensor", tensor_b: "Tensor", *args, **kwargs
+) -> "Tensor":
+    """Returns a true division of the inputs, element-wise.
+
+    Operation performed is tensor_a / tensor_b. Output is achieved by combining
+    multiply and power operations.
+
+    Paremeters
+    ----------
+    tensor_a : toydiff.Tensor
+    tensor_b : toydiff.Tensor
+
+    Returns
+    -------
+    toydiff.Tensor
+    """
+    return OperationRunner(
+        Multiply, tensor_a, power(tensor_b, Tensor(-1))
+    ).run(*args, **kwargs)
 
 
 # -----------------------------------------------------------------------------
@@ -527,7 +565,18 @@ class Power(BinaryOp):
 
 
 def power(tensor_a: "Tensor", tensor_b: "Tensor", *args, **kwargs) -> "Tensor":
-    """First tensor elements raised to powers from second tensor, element-wise."""
+    """First tensor elements raised to powers from second tensor, element-wise.
+
+    Parameters
+    ----------
+    tensor_a : toydiff.Tensor
+    tensor_b : toydiff.Tensor
+
+    Return
+    ------
+    out : toydiff.Tensor
+        Power operation of the input tensors.
+    """
     return OperationRunner(Power, tensor_a, tensor_b).run(*args, **kwargs)
 
 
@@ -653,18 +702,6 @@ def minimum(
         The minimum of tensor_1 and tensor_b, element-wise.
     """
     return OperationRunner(Minimum, tensor_a, tensor_b).run(*args, **kwargs)
-
-
-def divide(
-    tensor_a: "Tensor", tensor_b: "Tensor", *args, **kwargs
-) -> "Tensor":
-    """Returns a true division of the inputs, element-wise.
-
-    Operation performed is tensor_a / tensor_b
-    """
-    return OperationRunner(Multiply, tensor_a, (tensor_b ** Tensor(-1))).run(
-        *args, **kwargs
-    )
 
 
 # -----------------------------------------------------------------------------
@@ -798,7 +835,16 @@ class Sin(UnaryOp):
 
 
 def sin(tensor: "Tensor", *args, **kwargs) -> "Tensor":
-    """Sine element-wise."""
+    """Sine element-wise.
+
+    Parameters
+    ----------
+    tensor : toydiff.Tensor
+
+    Return
+    ------
+    out : toydiff.Tensor
+    """
     return OperationRunner(Sin, tensor).run(*args, **kwargs)
 
 
@@ -822,7 +868,16 @@ class Cos(UnaryOp):
 
 
 def cos(tensor: "Tensor", *args, **kwargs) -> "Tensor":
-    """Cosine element-wise."""
+    """Cosine element-wise.
+
+    Parameters
+    ----------
+    tensor : toydiff.Tensor
+
+    Return
+    ------
+    out : toydiff.Tensor
+    """
     return OperationRunner(Cos, tensor).run(*args, **kwargs)
 
 
@@ -850,8 +905,37 @@ class Reshape(UnaryOp):
         return "Reshape(UnaryOp)"
 
 
-def reshape(tensor: "Tensor", newshape, order="C") -> "Tensor":
-    """Gives a new shape to a Tensor without changing its data."""
+def reshape(
+    tensor: "Tensor",
+    newshape: Union[int, Tuple[int]],
+    order: Literal["C", "F", "A"] = "C",
+) -> "Tensor":
+    """Gives a new shape to a Tensor without changing its data.
+
+    Parameters
+    ----------
+    tensor : toydiff.Tensor
+        Tensor to be reshaped.
+    newshape : int or tuple or ints
+        The new shape should be compatible with the original shape. If an
+        integer, then the result will be a 1-D tensor of that length. One shape
+        dimension can be -1. In this case, the value is inferred from the
+        length of the tensor and remaining dimensions.
+    order : {"C", "F", "A"}, optional, default: "C"
+        Read the elements of a using this index order, and place the elements
+        into the reshaped tensor using this index order. 'C' means to read /
+        write the elements using C-like index order, with the last axis index
+        changing fastest, back to the first axis index changing slowest. 'F'
+        means to read / write the elements using Fortran-like index order, with
+        the first index changing fastest, and the last index changing slowest.
+
+    Returns
+    -------
+    toydiff.Tensor
+        This will be a new view object if possible; otherwise, it will be a
+        copy. Note there is no guarantee of the memory layout (C- or Fortran-
+        contiguous) of the returned tensor.
+    """
     return OperationRunner(Reshape, tensor).run(newshape=newshape, order=order)
 
 
@@ -1042,7 +1126,6 @@ class Slice(ReduceOp):
         self.key = key
         return Tensor(
             self.get_value().__getitem__(key),
-            dtype=self.tensor.dtype,
             is_leaf=False,
             track_gradient=self.track_gradient,
             parents=self.parents,
@@ -1059,9 +1142,60 @@ class Slice(ReduceOp):
 
 
 # -----------------------------------------------------------------------------
+class Mean(ReduceOp):
+    def forward(self, axis=None, keepdims=False):
+        return Tensor(
+            np.mean(self.get_value(), axis=axis, keepdims=keepdims),
+            is_leaf=False,
+            track_gradient=self.track_gradient,
+            parents=self.parents,
+            op_name=self.__repr__(),
+        )
+    
+    def backward(self, gradient: Optional["Tensor"] = None):
+        raise NotImplementedError
+
+    def __repr__(self):
+        return "Mean(ReduceOp)"
+
+
+def mean(tensor: "Tensor", axis: Optional[int] = None, keepdims: bool = False):
+    return OperationRunner(Mean, tensor).run(axis=axis, keepdims=keepdims)
+
+
+# -----------------------------------------------------------------------------
+class StandardDeviation(ReduceOp):
+    def forward(self, axis, ddof, keepdims):
+        return Tensor(
+            np.std(self.get_value(), axis=axis, keepdims=keepdims, ddof=ddof),
+            is_leaf=False,
+            track_gradient=self.track_gradient,
+            parents=self.parents,
+            op_name=self.__repr__(),
+        )
+    
+    def backward(self, gradient: Optional["Tensor"] = None):
+        raise NotImplementedError
+
+    def __repr__(self):
+        return "StandardDeviation(ReduceOp)"
+
+
+def std(
+    tensor: "Tensor",
+    axis: Optional[int] = None,
+    ddof: int = 0,
+    keepdims: bool = False
+):
+    return OperationRunner(Mean, tensor).run(
+        axis=axis, keepdims=keepdims, ddof=ddof
+    )
+
+
+# -----------------------------------------------------------------------------
 # ------------------------------ OTHER FUNCTIONS ------------------------------
 # -----------------------------------------------------------------------------
-def ones(shape: tuple, dtype=np.int32, **kwargs) -> "Tensor":
+def ones(shape: Tuple[int], dtype=np.int32, **kwargs) -> "Tensor":
     return Tensor(np.ones(shape=shape, dtype=dtype, **kwargs))
 
 
@@ -1069,7 +1203,7 @@ def ones_like(tensor: "Tensor", dtype=np.int32, **kwargs) -> "Tensor":
     return Tensor(np.ones_like(tensor.numpy(), dtype=dtype, **kwargs))
 
 
-def zeros(shape: tuple, dtype=np.int32, **kwargs) -> "Tensor":
+def zeros(shape: Tuple[int], dtype=np.int32, **kwargs) -> "Tensor":
     return Tensor(np.zeros(shape=shape, dtype=dtype, **kwargs))
 
 
@@ -1077,7 +1211,7 @@ def zeros_like(tensor: "Tensor", dtype=np.int32, **kwargs) -> "Tensor":
     return Tensor(np.zeros_like(tensor.numpy(), dtype=dtype, **kwargs))
 
 
-def empty(shape: tuple, dtype=np.int32, **kwargs) -> "Tensor":
+def empty(shape: Tuple[int], dtype=np.int32, **kwargs) -> "Tensor":
     return Tensor(np.empty(shape=shape, dtype=dtype, **kwargs))
 
 
@@ -1211,6 +1345,11 @@ class Tensor:
         parents. The attribute `track_gradient` will be set to False.
 
         The internal numpy array will also be copied.
+
+        Returns
+        -------
+        toydiff.Tensor
+            Detached tensor.
         """
         return Tensor(self.value.copy(), dtype=self.dtype, is_leaf=True)
 
@@ -1291,6 +1430,12 @@ class Tensor:
     def minimum(self, other) -> "Tensor":
         return minimum(self, other)
 
+    def mean(self, axis=None, keepdims=False) -> "Tensor":
+        return mean(self, axis=axis, keepdims=keepdims)
+
+    def std(self, axis=None, ddof=0, keepdims=False) -> "Tensor":
+        return std(self, axis=axis, ddof=ddof, keepdims=keepdims)
+
     def sum(self, *args, **kwargs) -> "Tensor":
         return sum(self, *args, **kwargs)
 
@@ -1339,7 +1484,14 @@ class Tensor:
 
     def zero_grad(self) -> None:
         """Zeroes the gradient attribute of self tensor."""
-        self.gradient = Tensor(np.zeros_like(self.value, dtype=np.float32))
+        if self.track_gradient:
+            self.gradient = Tensor(np.zeros_like(self.value, dtype=np.float32))
+        else:
+            msg = (
+                "Trying to zero the gradient of a tensor with"
+                " 'track_gradient=False'"
+            )
+            ZeroGradientError(msg)
 
     def numpy(self) -> np.ndarray:
         """Returns the internal numpy array."""
@@ -1349,7 +1501,9 @@ class Tensor:
         return NotImplementedError
 
     def reshape(
-        self, newshape: Tuple[int], order: Literal["C", "F", "A"] = "C"
+        self,
+        newshape: Union[int, Tuple[int]],
+        order: Literal["C", "F", "A"] = "C"
     ) -> "Tensor":
         return reshape(self, newshape=newshape, order=order)
 
@@ -1365,8 +1519,8 @@ class Tensor:
         Parameters
         ----------
         gradient : toydiff.Tensor, optional, default: None
-            Starting gradient. If None, a gradient Tensor of shape equal to
-            self tensor shape will be passed.
+            Starting gradient. If None, a gradient Tensor of 1s and shape equal
+            to self tensor shape will be passed.
         """
         if self.is_leaf:
             warn = (

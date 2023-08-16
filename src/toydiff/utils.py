@@ -1,16 +1,20 @@
 """
 Useful utilities for the use of toydiff.
 """
+from typing import List
 
 __all__ = ["topological_sort"]
 
 
-def topological_sort(last):
+def topological_sort(last: "Tensor") -> List["Tensor"]:
     """Topological sort of a graph.
+
     Assumes `last` is a Tensor with accesible parents to traverse through.
+
     Parameters
     ----------
     last : Tensor
+
     Returns
     -------
     t_sort : list of Tensor
