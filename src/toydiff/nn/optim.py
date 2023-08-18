@@ -17,17 +17,18 @@ class Optimizer:
     lr : float
         Learning rate.
     """
+    __slots__ = ["model_parameters", "lr"]
     def __init__(self, model_parameters, lr: float):
         self.model_parameters = model_parameters
         self.lr = lr
 
     @abstractmethod
     def step(self) -> None:
-        raise NotImplementedError("Subclasses must overrige this method")
+        raise NotImplementedError("Subclasses must override this method")
 
 
 class GradientDescent(Optimizer):
-    """Classic gradient descen algorithm.
+    """Classic gradient descent algorithm.
 
     Parameters
     ----------

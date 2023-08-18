@@ -28,10 +28,14 @@ def topological_sort(last: "Tensor") -> List["Tensor"]:
             visited.add(node)
 
             if node.parents is not None:
-                for child in node.parents:
-                    _topological_sort(child)
+                for parent in node.parents:
+                    _topological_sort(parent)
 
             t_sort.append(node)
 
     _topological_sort(last)
     return t_sort
+
+
+def draw_graph(last_node: "Tensor"):
+    sorted_tensors = topological_sort(last_node)

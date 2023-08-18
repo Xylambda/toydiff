@@ -24,15 +24,13 @@ class Module:
         pass
 
     def parameters(self):
-        for _, val in self._parameters.items():
-            yield val
+        yield from self._parameters.values()
 
     def named_parameters(self):
-        for key, val in self._parameters.items():
-            yield {key: val}
+        yield from self._parameters.items()
 
     def zero_grad(self):
-        for parameter in self._parameters():
+        for parameter in self.parameters():
             parameter.zero_grad()
 
 
@@ -57,7 +55,7 @@ class Linear(Module):
             (self.out_features, self.in_features), track_gradient=True
         )
         if bias:
-            _bias = randn(self.out_features, track_gradient=True)
+            _bias = randn((self.out_features, ), track_gradient=True)
         else:
             _bias = None
         

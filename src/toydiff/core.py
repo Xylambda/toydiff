@@ -104,7 +104,7 @@ class Operation:
     def check_dtype_and_cast(self, obj: object, cast: bool = True) -> None:
         if not isinstance(obj, Tensor):
             if cast:
-                return Tensor(obj, is_leaf=True, track_gradient=False)
+                return Tensor(obj, is_leaf=True, track_gradient=True)
             else:
                 msg = "Operations are supported only for toydiff.Tensor instances"
                 raise TypeError(msg)
@@ -201,13 +201,12 @@ class UnaryOp(Operation):  # TAN, SQRT
     def get_value(self) -> np.ndarray:
         return self.tensor.numpy()
 
-    def _set_gradients(
-        self, gradient
-    ) -> (
-        None
-    ):  # TODO: if gradient is Not None, then we should add to accumulate gradients
+    def _set_gradients(self, gradient) -> None:
         if self.tensor.track_gradient:
-            self.tensor.gradient = gradient
+            if self.tensor.gradient is None:
+                self.tensor.gradient = gradient
+            else:
+                self.tensor.gradient.value += gradient.value
 
 
 class BinaryOp(Operation):
@@ -238,6 +237,8 @@ class BinaryOp(Operation):
 
         if tensor_a.track_gradient or tensor_b.track_gradient:
             track_gradient = True
+        else:
+            track_gradient = False
 
         super().__init__(track_gradient=track_gradient)
 
@@ -270,12 +271,20 @@ class BinaryOp(Operation):
 
         return to_collapse
 
-    def _set_gradients(self, gradient_a, gradient_b) -> None:
+    def _set_gradients(
+        self, gradient_a: "Tensor", gradient_b: "Tensor"
+    ) -> None:
         if self.tensor_a.track_gradient:
-            self.tensor_a.gradient = gradient_a
+            if self.tensor_a.gradient is None:
+                self.tensor_a.gradient = gradient_a
+            else:
+                self.tensor_a.gradient.value += gradient_a.value
 
         if self.tensor_b.track_gradient:
-            self.tensor_b.gradient = gradient_b
+            if self.tensor_b.gradient is None:
+                self.tensor_b.gradient = gradient_b
+            else:
+                self.tensor_b.gradient.value += gradient_b.value
 
 
 class ReduceOp(UnaryOp):
@@ -430,8 +439,8 @@ class MatrixMultiplication(BinaryOp):
     def backward(self, gradient: Optional["Tensor"] = None) -> None:
         data_a, data_b = self.get_value()
         grad_np = gradient.numpy()
-        gradient_a = Tensor(grad_np @ data_b.T)
-        gradient_b = Tensor(data_a.T @ grad_np)
+        gradient_a = Tensor(np.matmul(grad_np, data_b.T))
+        gradient_b = Tensor(np.matmul(data_a.T, grad_np))
         self._set_gradients(gradient_a, gradient_b)
 
     def __repr__(self):
@@ -533,10 +542,16 @@ def divide(
 
 # -----------------------------------------------------------------------------
 class Power(BinaryOp):
+    __slots__ = ["power"]
+    def __init__(self, tensor_a: "Tensor", tensor_b: "Tensor"):
+        super().__init__(tensor_a=tensor_a, tensor_b=tensor_b)
+        self.power = None
+
     def forward(self, *args, **kwargs) -> "Tensor":
         data_a, data_b = self.get_value()
+        self.power = np.power(data_a, data_b, *args, **kwargs)
         return Tensor(
-            np.power(data_a, data_b, *args, **kwargs),
+            self.power,
             is_leaf=False,
             parents=self.parents,
             track_gradient=self.track_gradient,
@@ -546,9 +561,10 @@ class Power(BinaryOp):
     def backward(self, gradient: Optional["Tensor"] = None):
         # data_a is base and data_b is exponent
         data_a, data_b = self.get_value()
+        grad_np = gradient.numpy()
 
-        grad_a = (data_b * np.power(data_a, data_b - 1)) * gradient.numpy()
-        grad_b = (np.power(data_a, data_b) * np.log(data_a)) * gradient.numpy()
+        grad_a = (data_b * np.power(data_a, data_b - 1)) * grad_np
+        grad_b = (self.power * np.log(data_a)) * grad_np
 
         if data_a.ndim > data_b.ndim:
             grad_b = self._collapse_grad(
@@ -711,9 +727,8 @@ def minimum(
 # -----------------------------------------------------------------------------
 class Log(UnaryOp):
     def forward(self, *args, **kwargs):
-        data = self.get_value()
         return Tensor(
-            np.log(data, *args, **kwargs),
+            np.log(self.get_value(), *args, **kwargs),
             is_leaf=False,
             parents=self.parents,
             track_gradient=self.track_gradient,
@@ -721,8 +736,7 @@ class Log(UnaryOp):
         )
 
     def backward(self, gradient: Optional["Tensor"] = None):
-        data = self.get_value()
-        self._set_gradients(Tensor((1 / data) * gradient.numpy()))
+        self._set_gradients(Tensor(gradient.numpy() / self.get_value()))
 
     def __repr__(self) -> str:
         return "Log(UnaryOp)"
@@ -747,8 +761,7 @@ class Sigmoid(UnaryOp):
         self.sigmoid = None  # avoid multiple computations
 
     def forward(self, *args, **kwargs):
-        data = self.get_value()
-        self.sigmoid = expit(data, *args, **kwargs)
+        self.sigmoid = expit(self.get_value(), *args, **kwargs)
         return Tensor(
             self.sigmoid,
             is_leaf=False,
@@ -759,7 +772,7 @@ class Sigmoid(UnaryOp):
 
     def backward(self, gradient: Optional["Tensor"] = None):
         self._set_gradients(
-            Tensor((self.sigmoid * (1 - self.sigmoid)) * gradient)
+            Tensor((self.sigmoid * (1 - self.sigmoid)) * gradient.numpy())
         )
 
     def __repr__(self) -> str:
@@ -795,7 +808,9 @@ class Negative(UnaryOp):
         )
 
     def backward(self, gradient: Optional["Tensor"] = None) -> None:
-        self._set_gradients(Tensor(-np.ones_like(self.get_value()) * gradient))
+        self._set_gradients(
+            Tensor(-np.ones_like(self.get_value()) * gradient.numpy())
+        )
 
     def __repr__(self) -> str:
         return "Negative(UnaryOp)"
@@ -943,10 +958,9 @@ def reshape(
 
 # -----------------------------------------------------------------------------
 class Exponential(UnaryOp):
-    def forward(self, *args, **kwargs) -> "Tensor":
-        data = self.get_value()
+    def forward(self) -> "Tensor":
         return Tensor(
-            np.exp(data, *args, **kwargs),
+            np.exp(self.get_value()),
             is_leaf=False,
             track_gradient=self.track_gradient,
             parents=self.parents,
@@ -954,16 +968,15 @@ class Exponential(UnaryOp):
         )
 
     def backward(self, gradient: Optional["Tensor"] = None) -> "Tensor":
-        grad = self.out.numpy() * gradient.numpy()
-        self._set_gradients(Tensor(grad))
+        self._set_gradients(Tensor(self.out.numpy() * gradient.numpy()))
 
     def __repr__(self):
         return "Exponential(UnaryOp)"
 
 
-def exp(tensor: "Tensor", *args, **kwargs) -> "Tensor":
+def exp(tensor: "Tensor") -> "Tensor":
     """Calculate the exponential of all elements in the input tensor."""
-    return OperationRunner(Exponential, tensor).run(*args, **kwargs)
+    return OperationRunner(Exponential, tensor).run()
 
 
 # -----------------------------------------------------------------------------
@@ -1227,9 +1240,13 @@ def std(
     ddof: int = 0,
     keepdims: bool = False
 ):
-    return OperationRunner(Mean, tensor).run(
+    """
+    return OperationRunner(StandardDeviation, tensor).run(
         axis=axis, keepdims=keepdims, ddof=ddof
     )
+    """
+    # TODO: much more faster to create a ReduceOp
+    return power(power(tensor - tensor.mean(), 2).sum() / len(tensor), 0.5)
 
 
 # -----------------------------------------------------------------------------
@@ -1341,17 +1358,59 @@ class Tensor:
     """A toydiff.Tensor is a multi-dimensional matrix containing elements of a
     single data type.
 
+    Chaining tensors with arbitrary operations will generate a differentiable
+    computational graph. Derivatives are computed using the chain rule. Only
+    Tensors with `track_gradient=True` will receive a gradient Tensor once
+    'backward' is called.
+
+    Intermediate derivates are stored by default.
+
+    Tensor creation
+    ---------------
+    You can create a tensor passing an array or an array-wrappable object:
+    >>> import toydiff as tdf
+    >>> import numpy as np
+    >>> a = tdf.Tensor([1, 2, 3], track_gradient=True)
+    >>> b = tdf.Tensor(np.random.rand(3, 3), track_gradient=True)
+
+    ToyDiff also supports some functions to generate Tensors with ease:
+    >>> tdf.rand((3,3), track_gradient=True)
+    >>> tdf.zeros((3,3), track_gradient=True)
+    >>> tdf.ones_like(a, track_gradient=True)
+
+    Forward computation
+    -------------------
+    Simply operate like you would in NumPy
+    >>> c = a + b
+
+    `c` is now a non-leaf tensor whose parents are `a` and `b` and whose
+    backward operation is the derivative of the addition function.
+
+    We can add as many operations as we want:
+
+    >>> d = tdf.log(c)
+    >>> e = tdf.sum(d)
+
+    Backward computation
+    --------------------
+    Calling backward on the last node of the graph will fill the gradients of
+    all tensors in the graph that have `track_gradient=True`, storing them in
+    an attribute called `gradient`:
+
+    >>> e.backward()
+    >>> print(a.gradient)
+
     Parameters
     ----------
     value : obj
-        Objecto for the Tensor to wrap.
+        Object for the Tensor to wrap.
     is_leaf : bool, optional, default: True
-        Whether this node is a leaf node (no parents) or not.
+        Whether this Tensor is a leaf node (no parents) or not.
     track_gradient : optional, default: False
         If True, gradients will be tracked for this tensor.
     parents : list of Tensor, optional, default: None
         Tensors that originated self. For example, the operation a + b = c will
-        generate a Tensor c whose parents are a and b.
+        generate a Tensor `c` whose parents are `a` and `b`.
     op_name : str
         Name of the operation that generated self Tensor. Should be None for
         leaf tensors.
@@ -1510,7 +1569,12 @@ class Tensor:
         return sum(self, *args, **kwargs)
 
     def log(self, *args, **kwargs) -> "Tensor":
+        """Calculate the natural log of all elements in self tensor."""
         return log(self, *args, **kwargs)
+
+    def exp(self) -> "Tensor":
+        """Calculate the exponential of all elements in self tensor."""
+        return exp(self)
 
     def sigmoid(self, *args, **kwargs) -> "Tensor":
         return sigmoid(self, *args, **kwargs)
