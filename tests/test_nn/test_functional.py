@@ -50,7 +50,7 @@ def test_sigmoid():
     )
 
 
-def test_sofmax():
+def test_softmax():
     tensor, tensor_torch = generate_input((5, ))[0]
     out = softmax(tensor)
     out_torch = torch.nn.functional.softmax(tensor_torch)
@@ -66,7 +66,7 @@ def test_sofmax():
 
     # test backward
     np.testing.assert_allclose(
-        tensor.gradient.numpy(), tensor_torch.grad.numpy(), rtol=RTOL
+        tensor.gradient.numpy(), tensor_torch.grad.numpy(), rtol=1e-04
     )
 
 
@@ -86,7 +86,7 @@ def test_softmin():
 
     # test backward
     np.testing.assert_allclose(
-        tensor.gradient.numpy(), tensor_torch.grad.numpy(), rtol=RTOL
+        tensor.gradient.numpy(), tensor_torch.grad.numpy(), rtol=1e-04
     )
 
 

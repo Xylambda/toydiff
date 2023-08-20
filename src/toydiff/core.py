@@ -46,6 +46,7 @@ __UNARY_OPS = [
     "reshape",
     "exp",
     "transpose",
+    "sign",
 ]
 
 __BINARY_OPS = [
@@ -1023,6 +1024,31 @@ def transpose(tensor: "Tensor", axes: tuple = None) -> "Tensor":
     a transposed vector is simply the same vector.
     """
     return OperationRunner(Transpose, tensor).run(axes=axes)
+
+
+# -----------------------------------------------------------------------------
+class Sign(UnaryOp):
+    def forward(self):
+        return Tensor(
+            np.sign(self.get_value()),
+            is_leaf=False,
+            track_gradient=self.track_gradient,
+            parents=self.parents,
+            op_name=self.__repr__()
+        )
+
+    def backward(self, gradient: "Tensor" = None) -> None:
+        self._set_gradients(
+            Tensor(np.zeros_like(self.get_value()) * gradient.numpy())
+        )
+
+    def __repr__(self):
+        return "Sign(UnaryOp)"
+
+
+def sign(tensor: "Tensor") -> "Tensor":
+    """Element-wise sign function"""
+    return OperationRunner(Sign, tensor).run()
 
 
 # -----------------------------------------------------------------------------
