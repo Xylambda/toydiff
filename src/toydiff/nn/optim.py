@@ -12,19 +12,23 @@ class Optimizer:
 
     Parameters
     ----------
-    model_parameters : iterable
-        Parameters to optimize.
+    model : iterable
+        Model to optimize.
     lr : float
         Learning rate.
     """
-    __slots__ = ["model_parameters", "lr"]
-    def __init__(self, model_parameters, lr: float):
-        self.model_parameters = model_parameters
+    __slots__ = ["model", "lr"]
+    def __init__(self, model, lr: float):
+        self.model = model
         self.lr = lr
 
     @abstractmethod
     def step(self) -> None:
         raise NotImplementedError("Subclasses must override this method")
+
+    def zero_grad(self):
+        for parameter in self.model.parameters():
+            parameter.zero_grad()
 
 
 class GradientDescent(Optimizer):
@@ -32,14 +36,14 @@ class GradientDescent(Optimizer):
 
     Parameters
     ----------
-    model_parameters : iterable
-        Parameters to optimize.
+    model : iterable
+        Model to optimize.
     lr : float
         Learning rate.
     """
-    def __init__(self, model_parameters, lr=3e-4):
-        super().__init__(model_parameters=model_parameters, lr=lr)
+    def __init__(self, model, lr=3e-4):
+        super().__init__(model=model, lr=lr)
 
     def step(self) -> None:
-        for parameter in self.model_parameters:
-            parameter -= parameter.gradient * self.lr
+        for parameter in self.model.parameters():
+            parameter.value = parameter.value - parameter.gradient.value * self.lr
