@@ -1,7 +1,7 @@
 import torch
 from toydiff.testing import generate_input
 from toydiff.nn.functional import (
-    relu, sigmoid, softmax, softmin, tanh, mse_loss
+    relu, sigmoid, softmax, softmin, tanh, mse_loss, mae_loss
 )
 
 import numpy as np
@@ -114,6 +114,30 @@ def test_mse_loss():
     (t1, t1_torch), (t2, t2_torch) = generate_input((3,))
     out = mse_loss(t1, t2)
     out_torch = torch.nn.functional.mse_loss(t1_torch, t2_torch)
+
+    # call backward
+    out.backward()
+    out_torch.backward(torch.ones_like(out_torch))
+
+    # test forward
+    np.testing.assert_allclose(
+        out.numpy(), out_torch.detach().numpy(), rtol=RTOL
+    )
+
+    # test backward
+    np.testing.assert_allclose(
+        t1.gradient.numpy(), t1_torch.grad.numpy(), rtol=RTOL
+    )
+
+    np.testing.assert_allclose(
+        t2.gradient.numpy(), t2_torch.grad.numpy(), rtol=RTOL
+    )
+
+
+def test_mae_loss():
+    (t1, t1_torch), (t2, t2_torch) = generate_input((3,))
+    out = mae_loss(t1, t2)
+    out_torch = torch.nn.functional.l1_loss(t1_torch, t2_torch)
 
     # call backward
     out.backward()

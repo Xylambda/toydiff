@@ -11,7 +11,7 @@ setup(
     name='toydiff',
     version=versioneer.get_version(),
     cmdclass=versioneer.get_cmdclass(),
-    description="Array-like automatic differentiation",
+    description="Tensor automatic differentiation and neural networks",
     long_description=long_description,
     long_description_content_type='text/markdown',
     url='https://github.com/Xylambda/toydiff',
@@ -33,6 +33,7 @@ setup(
     install_requires=[
         "numpy",
         "scipy",
+        "pyfma",  # fused multiply-add
     ],
     extras_require={
         "test": [

@@ -7,4 +7,4 @@ from . import optim
 from . import blocks
 
 
-__all__ = ["functional", "blocks", "optim"]
+__all__ = ["functional", "blocks", "optim", "init"]

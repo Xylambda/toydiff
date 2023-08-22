@@ -20,6 +20,7 @@
 .hypothesis/
 .installed.cfg
 .mr.developer.cfg
+.ipynb_checkpoints
 .mypy_cache/
 .nox/
 .project

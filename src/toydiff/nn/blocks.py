@@ -2,7 +2,7 @@
 Pool of optimizable building blocks.
 """
 from abc import abstractmethod
-from toydiff.core import Tensor, randn, matmul
+from toydiff.core import Tensor, randn, matmul, fma
 
 
 __all__ = ["Module", "Linear"]
@@ -50,7 +50,7 @@ class Linear(Module):
         if bias:
             self.register_parameter("bias", self.bias)
 
-    def _initialize_parameters(self, bias):
+    def _initialize_parameters(self, bias: Tensor):
         weights = randn(
             (self.out_features, self.in_features), track_gradient=True
         )
@@ -61,8 +61,8 @@ class Linear(Module):
         
         return weights, _bias
 
-    def forward(self, X):
+    def forward(self, X: Tensor) -> Tensor:
         if self.bias is None:
             return matmul(X, self.weights.T)
         else:
-            return matmul(X, self.weights.T) + self.bias
+            return fma(X, self.weights.T, self.bias)

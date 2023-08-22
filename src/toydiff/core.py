@@ -34,6 +34,7 @@ from toydiff.exceptions import (
     InplaceModificationError,
     NullBackwardFunctionError,
     ZeroGradientError,
+    GradientShapeError,
 )
 from toydiff.utils import topological_sort
 
@@ -43,10 +44,12 @@ __UNARY_OPS = [
     "sigmoid",
     "sin",
     "cos",
+    "tan",
     "reshape",
     "exp",
     "transpose",
     "sign",
+    "abs",
 ]
 
 __BINARY_OPS = [
@@ -72,6 +75,7 @@ __OTHER = [
     "empty_like",
     "rand",
     "randn",
+    "fma",  # TODO: at some point, we may need to add ternary ops
 ]
 
 __all__ = ["Tensor"] + __UNARY_OPS + __BINARY_OPS + __REDUCE_OPS + __OTHER
@@ -185,7 +189,7 @@ class Operation:
         raise NotImplementedError("Subclasses must override this method")
 
 
-class UnaryOp(Operation):  # TAN, SQRT
+class UnaryOp(Operation):
     """Base class to implement unary operations."""
 
     __slots__ = ["tensor", "parents", "out"]
@@ -204,6 +208,13 @@ class UnaryOp(Operation):  # TAN, SQRT
 
     def _set_gradients(self, gradient) -> None:
         if self.tensor.track_gradient:
+            if self.tensor.shape != gradient.shape:
+                msg = (
+                    f"Wrong gradient shape {gradient.shape} for a tensor of"
+                    f" shape {self.tensor.shape}"
+                )
+                raise GradientShapeError(msg)
+            
             if self.tensor.gradient is None:
                 self.tensor.gradient = gradient
             else:
@@ -276,12 +287,28 @@ class BinaryOp(Operation):
         self, gradient_a: "Tensor", gradient_b: "Tensor"
     ) -> None:
         if self.tensor_a.track_gradient:
+
+            if self.tensor_a.shape != gradient_a.shape:
+                msg = (
+                    f"Wrong gradient shape {gradient_a.shape} for a tensor of"
+                    f" shape {self.tensor_a.shape}"
+                )
+                raise GradientShapeError(msg)
+
             if self.tensor_a.gradient is None:
                 self.tensor_a.gradient = gradient_a
             else:
                 self.tensor_a.gradient.value += gradient_a.value
 
         if self.tensor_b.track_gradient:
+
+            if self.tensor_b.shape != gradient_a.shape:
+                msg = (
+                    f"Wrong gradient shape {gradient_b.shape} for a tensor of"
+                    f" shape {self.tensor_b.shape}"
+                )
+                raise GradientShapeError(msg)
+
             if self.tensor_b.gradient is None:
                 self.tensor_b.gradient = gradient_b
             else:
@@ -466,6 +493,30 @@ def matmul(
     return OperationRunner(MatrixMultiplication, tensor_a, tensor_b).run(
         *args, **kwargs
     )
+
+
+# -----------------------------------------------------------------------------
+class FusedMultiplyAdd:
+    def forward(self) -> "Tensor":
+        pass
+
+    def backward(self, gradient: "Tensor" = None) -> None:
+        pass
+
+    def __repr__(self) -> str:
+        return "FusedMultiplyAdd(TernaryOp)"
+
+
+def fma(
+    tensor_a: "Tensor", tensor_b: "Tensor", tensor_c: "Tensor"
+) -> "Tensor":
+    """Fused matrix multiplication and addition operator.
+
+    Currently, the operation is not performed by fusing the operations but by
+    chaining them. Expect this to change in the future.
+    """
+    # TODO: https://github.com/nschloe/pyfma
+    return matmul(tensor_a, tensor_b) + tensor_c
 
 
 # -----------------------------------------------------------------------------
@@ -845,8 +896,9 @@ class Sin(UnaryOp):
         )
 
     def backward(self, gradient: Optional["Tensor"] = None) -> None:
-        grad = Tensor(np.cos(self.get_value()) * gradient.numpy())
-        self._set_gradients(grad)
+        self._set_gradients(
+            Tensor(np.cos(self.get_value()) * gradient.numpy())
+        )
 
     def __repr__(self) -> str:
         return "Sin(UnaryOp)"
@@ -878,8 +930,9 @@ class Cos(UnaryOp):
         )
 
     def backward(self, gradient: Optional["Tensor"] = None) -> None:
-        grad = Tensor(-np.sin(self.get_value()) * gradient.numpy())
-        self._set_gradients(grad)
+        self._set_gradients(
+            Tensor(-np.sin(self.get_value()) * gradient.numpy())
+        )
 
     def __repr__(self) -> str:
         return "Cos(UnaryOp)"
@@ -900,6 +953,40 @@ def cos(tensor: "Tensor", *args, **kwargs) -> "Tensor":
 
 
 # -----------------------------------------------------------------------------
+class Tan(UnaryOp):
+    def forward(self):
+        return Tensor(
+            np.tan(self.get_value()),
+            parents=self.parents,
+            track_gradient=self.track_gradient,
+            is_leaf=False,
+            op_name=self.__repr__()
+        )
+
+    def backward(self, gradient: Optional["Tensor"] = None) -> None:
+        self._set_gradients(
+            Tensor(1 / (np.cos(self.get_value()) ** 2) * gradient.numpy())
+        )
+
+    def __repr__(self) -> str:
+        return "Tan(UnaryOp)"
+
+
+def tan(tensor: "Tensor", *args, **kwargs) -> "Tensor":
+    """Tangent function element-wise.
+
+    Parameters
+    ----------
+    tensor : toydiff.Tensor
+
+    Return
+    ------
+    out : toydiff.Tensor
+    """
+    return OperationRunner(Tan, tensor).run(*args, **kwargs)
+
+
+# -----------------------------------------------------------------------------
 class Reshape(UnaryOp):
     def forward(self, newshape, order="C"):
         return Tensor(
@@ -914,10 +1001,13 @@ class Reshape(UnaryOp):
     def backward(self, gradient: Optional["Tensor"] = None) -> None:
         # original shape
         or_shape = self.tensor.numpy().shape
-        grad_np = gradient.numpy().reshape(or_shape)
-
-        grad = Tensor(np.ones_like(self.get_value()) * grad_np)
-        self._set_gradients(grad)
+        self._set_gradients(
+            Tensor(
+                np.ones_like(
+                    self.get_value()
+                ) * gradient.numpy().reshape(or_shape)
+            )
+        )
 
     def __repr__(self) -> str:
         return "Reshape(UnaryOp)"
@@ -1039,7 +1129,7 @@ class Sign(UnaryOp):
 
     def backward(self, gradient: "Tensor" = None) -> None:
         self._set_gradients(
-            Tensor(np.zeros_like(self.get_value()) * gradient.numpy())
+            Tensor(np.zeros_like(self.get_value()))
         )
 
     def __repr__(self):
@@ -1049,6 +1139,29 @@ class Sign(UnaryOp):
 def sign(tensor: "Tensor") -> "Tensor":
     """Element-wise sign function"""
     return OperationRunner(Sign, tensor).run()
+
+
+# -----------------------------------------------------------------------------
+class Absolute(UnaryOp):
+    def forward(self):
+        return Tensor(
+            np.abs(self.get_value()),
+            is_leaf=False,
+            track_gradient=self.track_gradient,
+            parents=self.parents,
+            op_name=self.__repr__()
+        )
+
+    def backward(self, gradient: "Tensor" = None) -> None:
+        self._set_gradients(gradient)
+
+    def __repr__(self):
+        return "Absolute(UnaryOp)"
+
+
+def abs(tensor: "Tensor") -> "Tensor":
+    """Element-wise absolute value function"""
+    return OperationRunner(Absolute, tensor).run()
 
 
 # -----------------------------------------------------------------------------
@@ -1216,8 +1329,7 @@ class Mean(ReduceOp):
                 grad_np = np.expand_dims(grad_np, i)
                 i += 1
 
-        grad = np.ones_like(data) * (1 / n)
-        self._set_gradients(Tensor(grad_np * grad))
+        self._set_gradients(Tensor(np.ones_like(data) * (grad_np / n)))
 
     def __repr__(self):
         return "Mean(ReduceOp)"
@@ -1525,6 +1637,18 @@ class Tensor:
     def __getitem__(self, key):
         return OperationRunner(Slice, self).run(key)
 
+    def __gt__(self, other):
+        return Tensor(self.value > other.value)
+
+    def __ge__(self, other):
+        return Tensor(self.value >= other.value)
+
+    def __lt__(self, other):
+        return Tensor(self.value < other.value)
+
+    def __le__(self, other):
+        return Tensor(self.value <= other.value)
+
     def __neg__(self):
         return negative(self)
 
@@ -1604,6 +1728,9 @@ class Tensor:
 
     def sigmoid(self, *args, **kwargs) -> "Tensor":
         return sigmoid(self, *args, **kwargs)
+
+    def abs(self, *args, **kwargs) -> "Tensor":
+        return abs(self, *args, **kwargs)
 
     def __repr__(self):
         rpr_ = self.value.__repr__().replace("array", "Tensor")[:-1]

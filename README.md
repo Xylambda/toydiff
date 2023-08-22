@@ -64,4 +64,49 @@ Tensor([[1.1955129 , 1.6154591 , 1.1438175 ],
        [0.83467734, 1.4432425 , 0.75835925]], dtype=float32, track_gradient=False)
 ```
 
-## Neural networks
+## Neural networks (WIP)
+
+The module `nn` contains all necessary functionality to create and optimize
+basic neural networks:
+
+```python
+import numpy as np
+import toydiff as tdf
+from toydiff.nn.blocks import Linear
+from toydiff.nn.optim import SGD
+from toydiff.nn.functional import mse_loss
+
+# generate data
+X = np.arange(-1, 1, 0.01)
+y = 2 * X + np.random.normal(size=len(X), scale=0.3)
+X = X.reshape(-1,1)
+y = y.reshape(-1,1)
+
+# create model
+model = Linear(1, 1, bias=False)
+
+# wrap your data in Tensors with `track_gradient=True`
+feat = tdf.Tensor(X, track_gradient=True)
+labels = tdf.Tensor(y, track_gradient=True)
+
+# pass model to optimizer
+optimizer = SGD(model)
+
+# build train loop
+# we want to minimize the sum of squares
+losses = []
+n_epochs = 15_000
+for i in range(n_epochs):
+    # zero grads if you do not want to accumulate gradients
+    optimizer.zero_grad()
+
+    # forward pass, loss and backward pass
+    out = model(feat)
+    loss = mse_loss(out, labels)
+    loss.backward()
+
+    # use gradients to update parameters
+    optimizer.step()
+    
+    losses.append(loss.value)
+```

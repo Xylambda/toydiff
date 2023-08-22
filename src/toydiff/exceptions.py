@@ -16,6 +16,15 @@ class NullBackwardFunctionError(ToyDiffError):
         self.message = message
 
 
+class GradientShapeError(ToyDiffError):
+    """Exception raised when a gradient tensor shape does not match the shape
+    of the tensor it is associated with.
+    """
+
+    def __init__(self, message) -> None:
+        self.message = message
+
+
 class InplaceModificationError(ToyDiffError):
     """Exception raised when user is trying to modify a tensor whose
     `backward_fn` has already been called.

@@ -2,10 +2,19 @@
 Pool of composed non-optimizable (stateless) functions. Each function is
 created using the basic operations implemented in core.py
 """
-from toydiff.core import Tensor, maximum
+from toydiff.core import Tensor, maximum, log
 
 
-__all__ = ["relu", "sigmoid", "softmax", "softmin", "tanh", "mse_loss"]
+__all__ = [
+    "relu",
+    "sigmoid",
+    "softmax",
+    "softmin",
+    "tanh",
+    "mse_loss",
+    "mae_loss",
+    "cross_entropy_loss",
+]
 
 
 def relu(tensor: Tensor) -> Tensor:
@@ -47,7 +56,22 @@ def mse_loss(
     keepdims: bool = False,
     reduction: str = "mean",
 ) -> Tensor:
+    """Mean squared error.
 
+    Can be reduced using a sum function too by passing `reduction="sum"`.
+
+    Parameters
+    ----------
+    output : toydiff.Tensor
+        Predicted tensor.
+    target : toydiff.Tensor
+        Real tensor.
+
+    Returns
+    -------
+    toydiff.Tensor
+        MSE loss.
+    """
     if reduction == "mean":
         return ((output - target) ** 2).mean(axis=axis, keepdims=keepdims)
     elif reduction == "sum":
@@ -55,3 +79,48 @@ def mse_loss(
     else:
         raise ValueError(f"Unsupported reduction func: '{reduction}'")
 
+
+def mae_loss(
+    output: Tensor,
+    target: Tensor,
+    axis: int = None,
+    keepdims: bool = False,
+    reduction: str = "mean",
+) -> Tensor:
+    """Mean absolute error.
+
+    Can be reduced using a sum function too by passing `reduction="sum"`.
+
+    Parameters
+    ----------
+    output : toydiff.Tensor
+        Predicted tensor.
+    target : toydiff.Tensor
+        Real tensor.
+
+    Returns
+    -------
+    toydiff.Tensor
+        MAE loss.
+    """
+    if reduction == "mean":
+        return ((output - target).abs()).mean(axis=axis, keepdims=keepdims)
+    elif reduction == "sum":
+        return ((output - target).abs()).sum(axis=axis, keepdims=keepdims)
+    else:
+        raise ValueError(f"Unsupported reduction func: '{reduction}'")
+
+
+def cross_entropy_loss(
+    output: Tensor,
+    target: Tensor,
+    axis: int = None,
+    keepdims: bool = False,
+    reduction: str = "mean",
+) -> Tensor:
+    if reduction == "mean":
+        return (-target * log(softmax(output))).sum(axis=0).mean(axis=axis, keepdims=keepdims)
+    elif reduction == "sum":
+        return (-target * log(softmax(output))).sum(axis=0).sum(axis=axis, keepdims=keepdims)
+    else:
+        raise ValueError(f"Unsupported reduction func: '{reduction}'")
