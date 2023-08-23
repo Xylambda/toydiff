@@ -22,19 +22,17 @@ The module is structured as follows:
 
 """
 import warnings
-
 from abc import abstractmethod
 from typing import List, Literal, Optional, Tuple, Type, Union
 
 import numpy as np
-
 from scipy.special import expit
 
 from toydiff.exceptions import (
+    GradientShapeError,
     InplaceModificationError,
     NullBackwardFunctionError,
     ZeroGradientError,
-    GradientShapeError,
 )
 from toydiff.utils import topological_sort
 
@@ -50,6 +48,8 @@ __UNARY_OPS = [
     "transpose",
     "sign",
     "abs",
+    "cosh",
+    "sinh",
 ]
 
 __BINARY_OPS = [
@@ -73,8 +73,6 @@ __OTHER = [
     "zeros_like",
     "empty",
     "empty_like",
-    "rand",
-    "randn",
     "fma",  # TODO: at some point, we may need to add ternary ops
 ]
 
@@ -214,7 +212,7 @@ class UnaryOp(Operation):
                     f" shape {self.tensor.shape}"
                 )
                 raise GradientShapeError(msg)
-            
+
             if self.tensor.gradient is None:
                 self.tensor.gradient = gradient
             else:
@@ -266,20 +264,43 @@ class BinaryOp(Operation):
         self, t1: np.ndarray, t2: np.ndarray, to_collapse: np.ndarray
     ) -> np.ndarray:
         """Helps to collapse the gradient when dimensions do not match but
-        forward operation broadcasted the input tensors.
+        forward operation broadcast the input tensors.
 
         Parameters
         ----------
         t1 : numpy.ndarray
         t2 : numpy.ndarray
         to_collapse : numpy.ndarray
+            Tensor gradient to collapse. This tensor is associated with t2
+            tensor (it will be his gradient).
         """
         diff_dims = t1.ndim - t2.ndim
-        for _ in range(diff_dims):
-            to_collapse = to_collapse.sum(axis=0)
 
-        if t2.size == 1:
-            to_collapse = to_collapse.sum(keepdims=True)
+        # for cases like (n x n) and (n x 1) we need to adjust diff_dims
+        if diff_dims == 0:
+            axes = []
+            for i, (d1, d2) in enumerate(zip(t1.shape, t2.shape)):
+                if d1 != d2:
+                    axes.append(i)
+            
+            # collapse
+            for ax in axes:
+                to_collapse = to_collapse.sum(axis=ax)
+            
+            try:
+                to_collapse = to_collapse.reshape(t2.shape)
+            except Exception as e:
+                print(e)
+        else:
+
+            for _ in range(diff_dims):
+                to_collapse = to_collapse.sum(axis=0)
+
+            if t2.size == 1:
+                to_collapse = to_collapse.sum(keepdims=True)
+
+        # TODO: ?????
+        #to_collapse = to_collapse.reshape(t2.shape)
 
         return to_collapse
 
@@ -287,7 +308,6 @@ class BinaryOp(Operation):
         self, gradient_a: "Tensor", gradient_b: "Tensor"
     ) -> None:
         if self.tensor_a.track_gradient:
-
             if self.tensor_a.shape != gradient_a.shape:
                 msg = (
                     f"Wrong gradient shape {gradient_a.shape} for a tensor of"
@@ -301,8 +321,7 @@ class BinaryOp(Operation):
                 self.tensor_a.gradient.value += gradient_a.value
 
         if self.tensor_b.track_gradient:
-
-            if self.tensor_b.shape != gradient_a.shape:
+            if self.tensor_b.shape != gradient_b.shape:
                 msg = (
                     f"Wrong gradient shape {gradient_b.shape} for a tensor of"
                     f" shape {self.tensor_b.shape}"
@@ -384,12 +403,26 @@ class Add(BinaryOp):
         grad_a = np_grad
         grad_b = np_grad
 
-        if data_a.ndim > data_b.ndim:
+        a_dims = data_a.ndim
+        b_dims = data_b.ndim
+
+        # first if deals with cases like (5,5) vs (5,1)
+        if a_dims == b_dims:
+            if data_a.size > data_b.size:
+                grad_b = self._collapse_grad(
+                    t1=data_a, t2=data_b, to_collapse=grad_b
+                )
+            if data_b.size > data_a.size:
+                grad_a = self._collapse_grad(
+                    t1=data_b, t2=data_a, to_collapse=grad_a
+                )
+
+        elif a_dims > b_dims:
             grad_b = self._collapse_grad(
                 t1=data_a, t2=data_b, to_collapse=grad_b
             )
 
-        elif data_b.ndim > data_a.ndim:
+        elif b_dims > a_dims:
             grad_a = self._collapse_grad(
                 t1=data_b, t2=data_a, to_collapse=grad_a
             )
@@ -587,14 +620,15 @@ def divide(
     -------
     toydiff.Tensor
     """
-    return OperationRunner(
-        Multiply, tensor_a, power(tensor_b, Tensor(-1))
-    ).run(*args, **kwargs)
+    return OperationRunner(Multiply, tensor_a, power(tensor_b, -1)).run(
+        *args, **kwargs
+    )
 
 
 # -----------------------------------------------------------------------------
 class Power(BinaryOp):
     __slots__ = ["power"]
+
     def __init__(self, tensor_a: "Tensor", tensor_b: "Tensor"):
         super().__init__(tensor_a=tensor_a, tensor_b=tensor_b)
         self.power = None
@@ -960,7 +994,7 @@ class Tan(UnaryOp):
             parents=self.parents,
             track_gradient=self.track_gradient,
             is_leaf=False,
-            op_name=self.__repr__()
+            op_name=self.__repr__(),
         )
 
     def backward(self, gradient: Optional["Tensor"] = None) -> None:
@@ -987,6 +1021,35 @@ def tan(tensor: "Tensor", *args, **kwargs) -> "Tensor":
 
 
 # -----------------------------------------------------------------------------
+def cosh(tensor: "Tensor") -> "Tensor":
+    """Element-wise hyperbolic cosine function.
+
+    Parameters
+    ----------
+    tensor : toydiff.Tensor
+
+    Return
+    ------
+    out : toydiff.Tensor
+    """
+    return (tensor.exp() + (-tensor).exp()) / 2
+
+
+def sinh(tensor: "Tensor") -> "Tensor":
+    """Element-wise hyperbolic sine function.
+
+    Parameters
+    ----------
+    tensor : toydiff.Tensor
+
+    Return
+    ------
+    out : toydiff.Tensor
+    """
+    return (tensor.exp() - (-tensor).exp()) / 2
+
+
+# -----------------------------------------------------------------------------
 class Reshape(UnaryOp):
     def forward(self, newshape, order="C"):
         return Tensor(
@@ -1003,9 +1066,8 @@ class Reshape(UnaryOp):
         or_shape = self.tensor.numpy().shape
         self._set_gradients(
             Tensor(
-                np.ones_like(
-                    self.get_value()
-                ) * gradient.numpy().reshape(or_shape)
+                np.ones_like(self.get_value())
+                * gradient.numpy().reshape(or_shape)
             )
         )
 
@@ -1124,13 +1186,11 @@ class Sign(UnaryOp):
             is_leaf=False,
             track_gradient=self.track_gradient,
             parents=self.parents,
-            op_name=self.__repr__()
+            op_name=self.__repr__(),
         )
 
     def backward(self, gradient: "Tensor" = None) -> None:
-        self._set_gradients(
-            Tensor(np.zeros_like(self.get_value()))
-        )
+        self._set_gradients(Tensor(np.zeros_like(self.get_value())))
 
     def __repr__(self):
         return "Sign(UnaryOp)"
@@ -1149,7 +1209,7 @@ class Absolute(UnaryOp):
             is_leaf=False,
             track_gradient=self.track_gradient,
             parents=self.parents,
-            op_name=self.__repr__()
+            op_name=self.__repr__(),
         )
 
     def backward(self, gradient: "Tensor" = None) -> None:
@@ -1298,6 +1358,7 @@ class Slice(ReduceOp):
 # -----------------------------------------------------------------------------
 class Mean(ReduceOp):
     __slots__ = ["axis"]
+
     def __init__(self, tensor: "Tensor"):
         super().__init__(tensor)
         self.axis = None
@@ -1311,7 +1372,7 @@ class Mean(ReduceOp):
             parents=self.parents,
             op_name=self.__repr__(),
         )
-    
+
     def backward(self, gradient: Optional["Tensor"] = None):
         data = self.get_value()
         shape = data.shape
@@ -1364,7 +1425,7 @@ class StandardDeviation(ReduceOp):
             parents=self.parents,
             op_name=self.__repr__(),
         )
-    
+
     def backward(self, gradient: Optional["Tensor"] = None):
         raise NotImplementedError
 
@@ -1376,7 +1437,7 @@ def std(
     tensor: "Tensor",
     axis: Optional[int] = None,
     ddof: int = 0,
-    keepdims: bool = False
+    keepdims: bool = False,
 ):
     """
     return OperationRunner(StandardDeviation, tensor).run(
@@ -1384,7 +1445,11 @@ def std(
     )
     """
     # TODO: much more faster to create a ReduceOp
-    return power(power(tensor - tensor.mean(), 2).sum() / len(tensor), 0.5)
+    return power(
+        power(tensor - tensor.mean(axis=axis, keepdims=keepdims), 2).sum()
+        / (len(tensor) - ddof),
+        0.5,
+    )
 
 
 # -----------------------------------------------------------------------------
@@ -1395,12 +1460,12 @@ def ones(
 ) -> "Tensor":
     return Tensor(
         np.ones(shape=shape, dtype=dtype, **kwargs),
-        track_gradient=track_gradient
+        track_gradient=track_gradient,
     )
 
 
 def ones_like(
-    tensor: "Tensor", dtype=np.int32, track_gradient=False,  **kwargs
+    tensor: "Tensor", dtype=np.int32, track_gradient=False, **kwargs
 ) -> "Tensor":
     return Tensor(
         np.ones_like(tensor.numpy(), dtype=dtype, **kwargs),
@@ -1409,11 +1474,11 @@ def ones_like(
 
 
 def zeros(
-    shape: Tuple[int], dtype=np.int32, track_gradient=False,  **kwargs
+    shape: Tuple[int], dtype=np.int32, track_gradient=False, **kwargs
 ) -> "Tensor":
     return Tensor(
         np.zeros(shape=shape, dtype=dtype, **kwargs),
-        track_gradient=track_gradient
+        track_gradient=track_gradient,
     )
 
 
@@ -1427,7 +1492,7 @@ def zeros_like(
 
 
 def empty(
-    shape: Tuple[int], dtype=np.int32, track_gradient=False,  **kwargs
+    shape: Tuple[int], dtype=np.int32, track_gradient=False, **kwargs
 ) -> "Tensor":
     return Tensor(
         np.empty(shape=shape, dtype=dtype, **kwargs),
@@ -1436,57 +1501,12 @@ def empty(
 
 
 def empty_like(
-    tensor: "Tensor", dtype=np.int32, track_gradient=False,  **kwargs
+    tensor: "Tensor", dtype=np.int32, track_gradient=False, **kwargs
 ) -> "Tensor":
     return Tensor(
         np.empty_like(tensor.numpy(), dtype=dtype, **kwargs),
         track_gradient=track_gradient,
     )
-
-
-def rand(shape: Tuple[int], track_gradient: bool = False) -> "Tensor":
-    """Random values in a given shape.
-
-    Create a tensor of the given shape and populate it with random samples from
-    a uniform distribution over [0, 1).
-
-    Parameters
-    ----------
-    shape : tuple of ints
-        Shape of the generated tensor.
-    track_gradient : bool, optional, default: False
-        If True, the created tensor will be ready to track gradients.
-
-    Returns
-    -------
-    toydiff.Tensor
-        Generated tensor.
-    """
-    return Tensor(np.random.rand(*shape), track_gradient=track_gradient)
-
-
-def randn(shape: Tuple[int], track_gradient: bool = False) -> "Tensor":
-    """Return a sample (or samples) from the "standard normal" distribution.
-
-    If positive int_like arguments are provided, randn generates a tensor of
-    shape (d0, d1, ..., dn), filled with random floats sampled from a
-    univariate "normal" (Gaussian) distribution of mean 0 and variance 1. A
-    single float randomly sampled from the distribution is returned if no
-    argument is provided.
-
-    Parameters
-    ----------
-    shape : tuple of ints
-        Shape of the generated tensor.
-    track_gradient : bool, optional, default: False
-        If True, the created tensor will be ready to track gradients.
-
-    Returns
-    -------
-    toydiff.Tensor
-        Generated tensor.
-    """
-    return Tensor(np.random.randn(*shape), track_gradient=track_gradient)
 
 
 # -----------------------------------------------------------------------------
@@ -1626,9 +1646,10 @@ class Tensor:
     def __setitem__(self, key, value):
         if self.__backward_called:
             msg = (
-                "Cannot modify Tensor when backwad has been already called."
-                " Use 'detach' method to generate a new instance with same"
-                " properties but no gradient")
+                "Can't modify Tensor when backwad has been already called. Use"
+                " 'detach' method to generate a new instance with same"
+                " properties but no gradient"
+            )
             raise InplaceModificationError(msg)
 
         # TODO: not sure if this is right
@@ -1652,17 +1673,11 @@ class Tensor:
     def __neg__(self):
         return negative(self)
 
-    def __pow__(self, exponent):
-        return power(self, exponent)
-
     def __truediv__(self, other):
         return divide(self, other)
 
     def __rtruediv__(self, other):
         return divide(other, self)
-
-    def __rpow__(self, base):
-        return power(base, self)
 
     def __add__(self, other):
         return add(self, other)
@@ -1695,27 +1710,35 @@ class Tensor:
         return matmul(other, self)
 
     def matmul(self, other, *args, **kwargs) -> "Tensor":
+        """Matrix multiplication between self and passed tensor"""
         return matmul(self, other, *args, **kwargs)
 
     def max(self, *args, **kwargs) -> "Tensor":
+        """Maximum of self tensor along given axis."""
         return max(self, *args, **kwargs)
 
     def maximum(self, other) -> "Tensor":
+        """Element-wise maximum operation between self and passed tensor."""
         return maximum(self, other)
 
     def min(self, *args, **kwargs) -> "Tensor":
+        """Minimum of self tensor along given axis."""
         return min(self, *args, **kwargs)
 
     def minimum(self, other) -> "Tensor":
+        """Element-wise minimum operation between self and passed tensor."""
         return minimum(self, other)
 
     def mean(self, axis=None, keepdims=False) -> "Tensor":
+        """Compute the arithmetic mean along the specified axis."""
         return mean(self, axis=axis, keepdims=keepdims)
 
     def std(self, axis=None, ddof=0, keepdims=False) -> "Tensor":
+        """Compute the standard deviation along the specified axis."""
         return std(self, axis=axis, ddof=ddof, keepdims=keepdims)
 
     def sum(self, *args, **kwargs) -> "Tensor":
+        """Compute sum along the specified axis."""
         return sum(self, *args, **kwargs)
 
     def log(self, *args, **kwargs) -> "Tensor":
@@ -1727,9 +1750,11 @@ class Tensor:
         return exp(self)
 
     def sigmoid(self, *args, **kwargs) -> "Tensor":
+        """Calculate sigmoid for all elements in self tensor."""
         return sigmoid(self, *args, **kwargs)
 
     def abs(self, *args, **kwargs) -> "Tensor":
+        """Calculate absolute value for all elements in self tensor."""
         return abs(self, *args, **kwargs)
 
     def __repr__(self):
@@ -1769,10 +1794,28 @@ class Tensor:
     def T(self):
         return transpose(self)
 
-    def zero_grad(self) -> None:
-        """Zeroes the gradient attribute of self tensor."""
+    def zero_grad(self, criterion="none") -> None:
+        """Zeroes the gradient attribute of self tensor.
+
+        By default val="none" because assigning variables is more efficient
+        than adding values (this will happen when calling backward, since the
+        library accumulates gradients by default).
+
+        Parameters
+        ----------
+        criterion : str, optional, default: "none"
+            If "none", gradient tensor will be set to None. If "zero", gradient
+            tensor will be a Tensor of zeros.
+        """
         if self.track_gradient:
-            self.gradient = Tensor(np.zeros_like(self.value, dtype=np.float32))
+            if criterion == "zero":
+                self.gradient = Tensor(
+                    np.zeros_like(self.value, dtype=self.dtype)
+                )
+            elif criterion == "none":
+                self.gradient = None
+            else:
+                ValueError(f"Unsupported criterion parameter: '{criterion}'")
         else:
             msg = (
                 "Trying to zero the gradient of a tensor with"
@@ -1790,7 +1833,7 @@ class Tensor:
     def reshape(
         self,
         newshape: Union[int, Tuple[int]],
-        order: Literal["C", "F", "A"] = "C"
+        order: Literal["C", "F", "A"] = "C",
     ) -> "Tensor":
         return reshape(self, newshape=newshape, order=order)
 
@@ -1801,7 +1844,8 @@ class Tensor:
         gradients in reverse order until reaching the leaf nodes.
 
         This function returns nothing; instead, the gradients of all tensors in
-        the computational graph will be modified in-place.
+        the computational graph will be modified in-place (for tensors with
+        `track_gradient=True`).
 
         Parameters
         ----------
@@ -1817,7 +1861,7 @@ class Tensor:
             warnings.warn(warn)
 
         if gradient is None:
-            gradient = Tensor(np.ones_like(self.value))
+            gradient = ones_like(self)
 
         self.gradient = gradient
         sorted_tensors = topological_sort(self)

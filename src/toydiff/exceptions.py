@@ -35,7 +35,7 @@ class InplaceModificationError(ToyDiffError):
 
 
 class ZeroGradientError(ToyDiffError):
-    """Exception reaised when is not possible to zero the gradient of a Tensor.
-    """
+    """Exception reaised when is not possible to zero the gradient of a Tensor."""
+
     def __init__(self, message) -> None:
         self.message = message

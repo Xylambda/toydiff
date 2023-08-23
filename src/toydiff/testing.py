@@ -1,8 +1,9 @@
 """
 Useful functions for testing
 """
-import torch
 import numpy as np
+import torch
+
 import toydiff as tdf
 
 

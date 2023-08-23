@@ -3,15 +3,13 @@ Collection of initializers. All initializers modify the passed tensors
 in-place.
 """
 import numpy as np
+
 from toydiff import Tensor
-from typing import Literal
 
 
-def kaiming(
-    tensor: Tensor, dist_type: Literal["uniform", "normal"] = "uniform"
-) -> None:
+def kaiming_uniform(tensor: Tensor, gain: int) -> None:
+    # https://github.com/rsokl/MyGrad/blob/master/src/mygrad/nnet/initializers/he_uniform.py
     fan = 1
-    gain = 2
     std = gain / np.sqrt(fan)
     bound = np.sqrt(3) * std
     shape = tensor.shape

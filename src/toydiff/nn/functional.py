@@ -2,13 +2,13 @@
 Pool of composed non-optimizable (stateless) functions. Each function is
 created using the basic operations implemented in core.py
 """
-from toydiff.core import Tensor, maximum, log
-
+from toydiff.core import Tensor, log, maximum
 
 __all__ = [
     "relu",
     "sigmoid",
     "softmax",
+    "log_softmax",
     "softmin",
     "tanh",
     "mse_loss",
@@ -30,6 +30,12 @@ def softmax(
 ) -> Tensor:
     _exp = tensor.exp()
     return _exp / _exp.sum(axis=axis, keepdims=keepdims)
+
+
+def log_softmax(
+    tensor: Tensor, axis: int = None, keepdims: bool = False
+) -> Tensor:
+    return softmax(tensor, axis=axis, keepdims=keepdims).log()
 
 
 def softmin(
@@ -119,8 +125,16 @@ def cross_entropy_loss(
     reduction: str = "mean",
 ) -> Tensor:
     if reduction == "mean":
-        return (-target * log(softmax(output))).sum(axis=0).mean(axis=axis, keepdims=keepdims)
+        return (
+            (-target * log(softmax(output)))
+            .sum(axis=0)
+            .mean(axis=axis, keepdims=keepdims)
+        )
     elif reduction == "sum":
-        return (-target * log(softmax(output))).sum(axis=0).sum(axis=axis, keepdims=keepdims)
+        return (
+            (-target * log(softmax(output)))
+            .sum(axis=0)
+            .sum(axis=axis, keepdims=keepdims)
+        )
     else:
         raise ValueError(f"Unsupported reduction func: '{reduction}'")

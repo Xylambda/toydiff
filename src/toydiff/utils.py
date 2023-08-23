@@ -39,3 +39,35 @@ def topological_sort(last: "Tensor") -> List["Tensor"]:
 
 def draw_graph(last_node: "Tensor"):
     sorted_tensors = topological_sort(last_node)
+
+
+class GradientCollapser:
+    """Class designed to generate gradient with appropiate shape for a given
+    operation.
+    """
+
+    # http://coldattic.info/post/116/
+    # https://github.com/tensorflow/tensorflow/blob/v2.12.0/tensorflow/python/ops/math_grad.py#L63-L84
+    def __init__(self,):
+        pass
+
+    def binary_grad(self, t1, t2, gradient):
+        """
+        Parameters
+        ----------
+        t1 : numpy.ndarray
+        t2 : numpy.ndarray
+        gradient : numpy.ndarray
+            Incoming gradient of the operation.
+        """
+        diff_dims = t1.ndim - t2.ndim
+        for _ in range(diff_dims):
+            gradient = gradient.sum(axis=0)
+
+        if t2.size == 1:
+            gradient = gradient.sum(keepdims=True)
+
+        return gradient
+
+    def unary_grad(self):
+        pass

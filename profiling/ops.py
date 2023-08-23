@@ -5,7 +5,7 @@ from functools import partial
 from pathlib import Path
 
 
-FUNCTION_NAMES = ["matmul", "matmul_backward"]
+FUNCTION_NAMES = ["matmul", "matmul_backward", "all"]
 PROFS_PATH = Path("profs")
 
 def prof_func(func: callable, name: str, size: int):
@@ -19,7 +19,7 @@ def prof_func(func: callable, name: str, size: int):
     profiler.dump_stats(folder / f"n={name}_s={size}.prof")
 
 
-# ----------------------------------------------------------------------------
+# -----------------------------------------------------------------------------
 def test_matmul(size: int):
     def exec(a, b):
         tdf.matmul(a, b)
@@ -41,7 +41,7 @@ def test_matmul_backward(size: int):
     prof_func(func, "MatMul.Backward", size)
 
 
-
+# -----------------------------------------------------------------------------
 if __name__ == "__main__":
     parser = argparse.ArgumentParser("")
     parser.add_argument("--name", type=str, default="matmul")
@@ -53,7 +53,13 @@ if __name__ == "__main__":
 
     if func_name == "matmul":
         test_matmul(size)
+
     elif func_name == "matmul_backward":
         test_matmul_backward(size)
+
+    elif func_name == "all":
+        test_matmul(size)
+        test_matmul_backward(size)
+
     else:
         raise ValueError(f"Supported functions are: {FUNCTION_NAMES}")

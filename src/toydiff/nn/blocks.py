@@ -2,42 +2,52 @@
 Pool of optimizable building blocks.
 """
 from abc import abstractmethod
-from toydiff.core import Tensor, randn, matmul, fma
+from collections import OrderedDict
+from typing import Dict, Iterator, Tuple
 
+from toydiff.core import Tensor, fma, matmul
+from toydiff.random import randn
 
 __all__ = ["Module", "Linear"]
 
 
 class Module:
     __slots__ = ["_parameters"]
+
     def __init__(self):
         self._parameters = {}
 
-    def __call__(self, *args, **kwargs):
+    def __call__(self, *args, **kwargs) -> Tensor:
         return self.forward(*args, **kwargs)
 
-    def register_parameter(self, key, value):
+    def register_parameter(self, key, value) -> None:
         self._parameters[key] = value
 
     @abstractmethod
     def forward(self, *args, **kwargs):
         pass
 
-    def parameters(self):
+    def parameters(self) -> Iterator[Tensor]:
         yield from self._parameters.values()
 
-    def named_parameters(self):
+    def named_parameters(self) -> Iterator[Tuple[str, Tensor]]:
         yield from self._parameters.items()
 
-    def zero_grad(self):
+    def zero_grad(self, criterion="none") -> None:
         for parameter in self.parameters():
-            parameter.zero_grad()
+            parameter.zero_grad(criterion)
+
+    def state_dict(self) -> Dict[str, Tensor]:
+        state_dict = OrderedDict()
+        for i, (name, param) in enumerate(self.named_parameters()):
+            state_dict[f"{name}_{i}"] = param
+        return state_dict
 
 
 class Linear(Module):
     __slots__ = ["in_features", "out_features", "bias", "weights"]
-    def __init__(self, in_features, out_features, bias=False):
 
+    def __init__(self, in_features, out_features, bias=False):
         super().__init__()
 
         self.in_features = in_features
@@ -55,10 +65,10 @@ class Linear(Module):
             (self.out_features, self.in_features), track_gradient=True
         )
         if bias:
-            _bias = randn((self.out_features, ), track_gradient=True)
+            _bias = randn((self.out_features,), track_gradient=True)
         else:
             _bias = None
-        
+
         return weights, _bias
 
     def forward(self, X: Tensor) -> Tensor:

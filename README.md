@@ -1,12 +1,11 @@
 # Toydiff
 
 `toydiff` is a simple automatic differentiation library that I created to wrap
-my head around how autodiff works.
-
-It is built using only NumPy and tested against PyTorch.
+my head around how autodiff works. It is built using NumPy and SciPy and it has
+been tested using PyTorch as a reference.
 
 The libray is very versatile, and can be used to create and train neural
-networks (of course).
+networks (WIP).
 
 ## Installation
 Normal user:
@@ -34,10 +33,9 @@ The use is almost the same as the one you would expect from PyTorch:
 
 ```python
 >>> import toydiff as tdf
-
 >>> # use `track_gradient=True` to allow backward to fill the gradients
->>> a = tdf.rand((3,3), track_gradient=True)
->>> b = tdf.rand((3,3), track_gradient=True)
+>>> a = tdf.random.rand((3,3), track_gradient=True)
+>>> b = tdf.random.rand((3,3), track_gradient=True)
 >>> c = tdf.matmul(a, b)
 >>> d = tdf.log(c)
 >>> e = tdf.sum(d)
