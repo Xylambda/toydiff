@@ -160,6 +160,8 @@ def test_2d_3d():
         t1.gradient.numpy(), t1_torch.grad.numpy(), rtol=RTOL
     )
 
+    # __import__("pdb").set_trace()
+
     np.testing.assert_allclose(
         t2.gradient.numpy(), t2_torch.grad.numpy(), rtol=RTOL
     )

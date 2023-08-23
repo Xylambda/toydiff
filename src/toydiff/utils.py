@@ -3,7 +3,7 @@ Useful utilities for the use of toydiff.
 """
 from typing import List
 
-__all__ = ["topological_sort"]
+__all__ = ["topological_sort", "draw_graph", "collapse", "gradient_collapse"]
 
 
 def topological_sort(last: "Tensor") -> List["Tensor"]:
@@ -41,33 +41,55 @@ def draw_graph(last_node: "Tensor"):
     sorted_tensors = topological_sort(last_node)
 
 
-class GradientCollapser:
-    """Class designed to generate gradient with appropiate shape for a given
-    operation.
+
+def collapse(arr, broadcast_arr, to_collapse):
     """
+    Parameters
+    ----------
+    arr : numpy.ndarray
+        Array of bigger dimensions. `broadcast_arr` has been broadcast
+        to match the shape of `arr`.
+    broadcast_arr : numpy.ndarray
+        Broacast array in its original form (non-broadcast).
+    to_collapse : numpy.ndarry
+        Array to collapse to match `broadcast_arr` array. Its shape is
+        the result of the operation between `arr` and `broadcast_arr`.
+    """
+    target_shape = broadcast_arr.shape
+    current_shape = to_collapse.shape
 
-    # http://coldattic.info/post/116/
-    # https://github.com/tensorflow/tensorflow/blob/v2.12.0/tensorflow/python/ops/math_grad.py#L63-L84
-    def __init__(self,):
-        pass
+    diff_dims = abs(arr.ndim - broadcast_arr.ndim)
+    for _ in range(diff_dims):
+        to_collapse = to_collapse.sum(axis=0)
 
-    def binary_grad(self, t1, t2, gradient):
-        """
-        Parameters
-        ----------
-        t1 : numpy.ndarray
-        t2 : numpy.ndarray
-        gradient : numpy.ndarray
-            Incoming gradient of the operation.
-        """
-        diff_dims = t1.ndim - t2.ndim
-        for _ in range(diff_dims):
-            gradient = gradient.sum(axis=0)
+    if broadcast_arr.size == 1:
+        to_collapse = to_collapse.sum(keepdims=True)
 
-        if t2.size == 1:
-            gradient = gradient.sum(keepdims=True)
+    # if gradient shape does not match, we further collapse
+    if target_shape != to_collapse.shape:
+        try:
+            to_collapse = to_collapse.reshape(target_shape)
+        except:
+            axes = []
+            for i, (d1, d2) in enumerate(zip(to_collapse.shape, target_shape)):
+                if d1 != d2:
+                    axes.append(i)
+            
+            for ax in axes:
+                to_collapse = to_collapse.sum(axis=ax)
 
-        return gradient
+            to_collapse = to_collapse.reshape(target_shape)
+    
+    return to_collapse
 
-    def unary_grad(self):
-        pass
+
+def gradient_collapse(arr_a, arr_b, grad_a, grad_b):
+    if grad_a.shape != arr_a.shape:
+        # collapse grad_a
+        grad_a = collapse(arr_b, arr_a, grad_a)
+
+    if grad_b.shape != arr_b.shape:
+        # collapse grad_b
+        grad_b = collapse(arr_a, arr_b, grad_b)
+    
+    return grad_a, grad_b

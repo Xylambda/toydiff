@@ -34,7 +34,7 @@ from toydiff.exceptions import (
     NullBackwardFunctionError,
     ZeroGradientError,
 )
-from toydiff.utils import topological_sort
+from toydiff.utils import topological_sort, gradient_collapse
 
 __UNARY_OPS = [
     "log",
@@ -260,50 +260,6 @@ class BinaryOp(Operation):
     def get_value(self) -> np.ndarray:
         return self.tensor_a.numpy(), self.tensor_b.numpy()
 
-    def _collapse_grad(
-        self, t1: np.ndarray, t2: np.ndarray, to_collapse: np.ndarray
-    ) -> np.ndarray:
-        """Helps to collapse the gradient when dimensions do not match but
-        forward operation broadcast the input tensors.
-
-        Parameters
-        ----------
-        t1 : numpy.ndarray
-        t2 : numpy.ndarray
-        to_collapse : numpy.ndarray
-            Tensor gradient to collapse. This tensor is associated with t2
-            tensor (it will be his gradient).
-        """
-        diff_dims = t1.ndim - t2.ndim
-
-        # for cases like (n x n) and (n x 1) we need to adjust diff_dims
-        if diff_dims == 0:
-            axes = []
-            for i, (d1, d2) in enumerate(zip(t1.shape, t2.shape)):
-                if d1 != d2:
-                    axes.append(i)
-            
-            # collapse
-            for ax in axes:
-                to_collapse = to_collapse.sum(axis=ax)
-            
-            try:
-                to_collapse = to_collapse.reshape(t2.shape)
-            except Exception as e:
-                print(e)
-        else:
-
-            for _ in range(diff_dims):
-                to_collapse = to_collapse.sum(axis=0)
-
-            if t2.size == 1:
-                to_collapse = to_collapse.sum(keepdims=True)
-
-        # TODO: ?????
-        #to_collapse = to_collapse.reshape(t2.shape)
-
-        return to_collapse
-
     def _set_gradients(
         self, gradient_a: "Tensor", gradient_b: "Tensor"
     ) -> None:
@@ -406,27 +362,7 @@ class Add(BinaryOp):
         a_dims = data_a.ndim
         b_dims = data_b.ndim
 
-        # first if deals with cases like (5,5) vs (5,1)
-        if a_dims == b_dims:
-            if data_a.size > data_b.size:
-                grad_b = self._collapse_grad(
-                    t1=data_a, t2=data_b, to_collapse=grad_b
-                )
-            if data_b.size > data_a.size:
-                grad_a = self._collapse_grad(
-                    t1=data_b, t2=data_a, to_collapse=grad_a
-                )
-
-        elif a_dims > b_dims:
-            grad_b = self._collapse_grad(
-                t1=data_a, t2=data_b, to_collapse=grad_b
-            )
-
-        elif b_dims > a_dims:
-            grad_a = self._collapse_grad(
-                t1=data_b, t2=data_a, to_collapse=grad_a
-            )
-
+        grad_a, grad_b = gradient_collapse(data_a, data_b, grad_a, grad_b)
         self._set_gradients(Tensor(grad_a), Tensor(grad_b))
 
     def __repr__(self):
@@ -570,16 +506,7 @@ class Multiply(BinaryOp):
         grad_a = data_b * np_grad
         grad_b = data_a * np_grad
 
-        if data_a.ndim > data_b.ndim:
-            grad_b = self._collapse_grad(
-                t1=data_a, t2=data_b, to_collapse=grad_b
-            )
-
-        elif data_b.ndim > data_a.ndim:
-            grad_a = self._collapse_grad(
-                t1=data_b, t2=data_a, to_collapse=grad_a
-            )
-
+        grad_a, grad_b = gradient_collapse(data_a, data_b, grad_a, grad_b)
         self._set_gradients(Tensor(grad_a), Tensor(grad_b))
 
     def __repr__(self):
@@ -652,16 +579,7 @@ class Power(BinaryOp):
         grad_a = (data_b * np.power(data_a, data_b - 1)) * grad_np
         grad_b = (self.power * np.log(data_a)) * grad_np
 
-        if data_a.ndim > data_b.ndim:
-            grad_b = self._collapse_grad(
-                t1=data_a, t2=data_b, to_collapse=grad_b
-            )
-
-        elif data_b.ndim > data_a.ndim:
-            grad_a = self._collapse_grad(
-                t1=data_b, t2=data_a, to_collapse=grad_a
-            )
-
+        grad_a, grad_b = gradient_collapse(data_a, data_b, grad_a, grad_b)
         self._set_gradients(Tensor(grad_a), Tensor(grad_b))
 
     def __repr__(self):
@@ -703,22 +621,13 @@ class Maximum(BinaryOp):
 
         grad_a = base_grad.copy()
         grad_a[data_a > data_b] = 1
+        grad_a = grad_a * grad_np
 
         grad_b = base_grad
         grad_b[data_b > data_a] = 1
+        grad_b = grad_b * grad_np
 
-        if data_a.ndim > data_b.ndim:
-            grad_a = grad_a * grad_np
-            grad_b = self._collapse_grad(
-                t1=data_a, t2=data_b, to_collapse=grad_b * grad_np
-            )
-
-        elif data_b.ndim > data_a.ndim:
-            grad_b = grad_b * grad_np
-            grad_a = self._collapse_grad(
-                t1=data_b, t2=data_a, to_collapse=grad_a * grad_np
-            )
-
+        grad_a, grad_b = gradient_collapse(data_a, data_b, grad_a, grad_b)
         self._set_gradients(Tensor(grad_a), Tensor(grad_b))
 
     def __repr__(self):
@@ -765,22 +674,13 @@ class Minimum(BinaryOp):
 
         grad_a = base_grad.copy()
         grad_a[data_a < data_b] = 1
+        grad_a = grad_a * grad_np
 
         grad_b = base_grad
         grad_b[data_b < data_a] = 1
+        grad_b = grad_b * grad_np
 
-        if data_a.ndim > data_b.ndim:
-            grad_a = grad_a * grad_np
-            grad_b = self._collapse_grad(
-                t1=data_a, t2=data_b, to_collapse=grad_b * grad_np
-            )
-
-        elif data_b.ndim > data_a.ndim:
-            grad_b = grad_b * grad_np
-            grad_a = self._collapse_grad(
-                t1=data_b, t2=data_a, to_collapse=grad_a * grad_np
-            )
-
+        grad_a, grad_b = gradient_collapse(data_a, data_b, grad_a, grad_b)
         self._set_gradients(Tensor(grad_a), Tensor(grad_b))
 
     def __repr__(self):
