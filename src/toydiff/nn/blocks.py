@@ -4,7 +4,7 @@ Pool of optimizable building blocks.
 from abc import abstractmethod
 from collections import OrderedDict
 from itertools import chain
-from typing import Dict, Iterator, Tuple, Optional
+from typing import Dict, Iterator, Optional, Tuple
 
 from toydiff.core import Tensor, fma, matmul
 from toydiff.random import randn
@@ -15,16 +15,17 @@ __all__ = ["Module", "Linear"]
 class Module:
     _parameters: Dict[str, Optional[Tensor]]
     _training: bool
+
     def __init__(self):
-        super().__setattr__('_parameters', OrderedDict())
-        super().__setattr__('_training', True)
+        super().__setattr__("_parameters", OrderedDict())
+        super().__setattr__("_training", True)
 
     def __call__(self, *args, **kwargs) -> Tensor:
         return self.forward(*args, **kwargs)
 
     def register_parameter(self, key, value) -> None:
         """Registers a parameter to make it optimizable."""
-        if '_parameters' not in self.__dict__:
+        if "_parameters" not in self.__dict__:
             raise AttributeError(
                 "cannot assign parameter before Module.__init__() call"
             )
@@ -48,7 +49,9 @@ class Module:
         # topological sort
         for module in self.__dict__:
             if module not in ["_parameters", "_training"]:
-                self._parameters[module] = self.__dict__[module].named_parameters()
+                self._parameters[module] = self.__dict__[
+                    module
+                ].named_parameters()
 
         # chain generators
         output = chain()
@@ -83,6 +86,7 @@ class Module:
 
 class Linear(Module):
     __slots__ = ["in_features", "out_features", "bias", "weights"]
+
     def __init__(self, in_features, out_features, bias=False):
         super().__init__()
 

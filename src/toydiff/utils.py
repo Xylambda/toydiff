@@ -1,9 +1,10 @@
 """
 Useful utilities for the use of toydiff.
 """
+from typing import List, Tuple
+
 import numpy as np
 from numpy.typing import ArrayLike
-from typing import List, Tuple
 
 __all__ = ["topological_sort", "draw_graph", "gradient_collapse"]
 

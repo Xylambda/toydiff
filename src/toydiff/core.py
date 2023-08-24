@@ -22,7 +22,7 @@ The module is structured as follows:
 
 """
 import warnings
-from abc import abstractmethod, ABC
+from abc import ABC, abstractmethod
 from typing import List, Literal, Optional, Tuple, Type, Union
 
 import numpy as np
@@ -34,7 +34,7 @@ from toydiff.exceptions import (
     NullBackwardFunctionError,
     ZeroGradientError,
 )
-from toydiff.utils import topological_sort, gradient_collapse
+from toydiff.utils import gradient_collapse, topological_sort
 
 __UNARY_OPS = [
     "log",

@@ -5,7 +5,7 @@ my head around how autodiff works. It is built using NumPy and SciPy and it has
 been tested using PyTorch as a reference.
 
 The libray is very versatile, and can be used to create and train neural
-networks (WIP).
+networks (WIP, only linear layers for now).
 
 ## Installation
 Normal user:
@@ -97,7 +97,7 @@ for i in range(n_epochs):
 
     # forward pass, loss and backward pass
     out = model(feat)
-    loss = mse_loss(out, labels)  # we want to minimize the sum of squares
+    loss = mse_loss(out, labels)  # minimize sum of square differences
     loss.backward()
 
     # use gradients to update parameters
