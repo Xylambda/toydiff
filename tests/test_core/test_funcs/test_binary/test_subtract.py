@@ -1,8 +1,9 @@
-import toydiff as tdf
+
+import avagrad as tdf
 import numpy as np
 import torch
 
-from toydiff.testing import generate_input
+from avagrad.testing import generate_input
 RTOL = 1e-06
 
 

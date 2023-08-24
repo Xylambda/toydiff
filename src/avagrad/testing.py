@@ -4,7 +4,7 @@ Useful functions for testing
 import numpy as np
 import torch
 
-import toydiff as tdf
+import avagrad as tdf
 
 
 def generate_input(shape, n_tensors=1):

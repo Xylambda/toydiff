@@ -1,6 +1,6 @@
 import argparse
 import cProfile
-import toydiff as tdf
+import avagrad as tdf
 from functools import partial
 from pathlib import Path
 

@@ -1,6 +1,6 @@
 import torch
-from toydiff.testing import generate_input
-from toydiff.nn.functional import (
+from avagrad.testing import generate_input
+from avagrad.nn.functional import (
     relu, sigmoid, softmax, softmin, tanh, mse_loss, mae_loss
 )
 

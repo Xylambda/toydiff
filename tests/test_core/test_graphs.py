@@ -3,7 +3,7 @@ Test arbitrary graphs (as many random graphs as possible)
 """
 import torch
 import numpy as np
-import toydiff as tdf
+import avagrad as tdf
 
 RTOL = 1e-06
 

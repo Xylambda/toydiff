@@ -2,7 +2,7 @@
 Pool of composed non-optimizable (stateless) functions. Each function is
 created using the basic operations implemented in core.py
 """
-from toydiff.core import Tensor, log, maximum
+from avagrad.core import Tensor, log, maximum
 
 __all__ = [
     "relu",
@@ -68,14 +68,14 @@ def mse_loss(
 
     Parameters
     ----------
-    output : toydiff.Tensor
+    output : avagrad.Tensor
         Predicted tensor.
-    target : toydiff.Tensor
+    target : avagrad.Tensor
         Real tensor.
 
     Returns
     -------
-    toydiff.Tensor
+    avagrad.Tensor
         MSE loss.
     """
     if reduction == "mean":
@@ -99,14 +99,14 @@ def mae_loss(
 
     Parameters
     ----------
-    output : toydiff.Tensor
+    output : avagrad.Tensor
         Predicted tensor.
-    target : toydiff.Tensor
+    target : avagrad.Tensor
         Real tensor.
 
     Returns
     -------
-    toydiff.Tensor
+    avagrad.Tensor
         MAE loss.
     """
     if reduction == "mean":

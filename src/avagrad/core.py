@@ -1,6 +1,6 @@
 """
-Core of the library toydiff. It contains:
-    1. A set of composable differentiable operations for toydiff.Tensor
+Core of the library avagrad. It contains:
+    1. A set of composable differentiable operations for avagrad.Tensor
     objects.
     2. A Tensor class.
 
@@ -28,13 +28,13 @@ from typing import List, Literal, Optional, Tuple, Type, Union
 import numpy as np
 from scipy.special import expit
 
-from toydiff.exceptions import (
+from avagrad.exceptions import (
     GradientShapeError,
     InplaceModificationError,
     NullBackwardFunctionError,
     ZeroGradientError,
 )
-from toydiff.utils import gradient_collapse, topological_sort
+from avagrad.utils import gradient_collapse, topological_sort
 
 __UNARY_OPS = [
     "log",
@@ -88,7 +88,7 @@ class Operation(ABC):
 
     Attributes
     ----------
-    out : toydiff.Tensor
+    out : avagrad.Tensor
     """
 
     __slots__ = ["out", "track_gradient"]
@@ -109,7 +109,7 @@ class Operation(ABC):
             if cast:
                 return Tensor(obj, is_leaf=True, track_gradient=True)
             else:
-                msg = "Operations are supported only for toydiff.Tensor instances"
+                msg = "Operations are supported only for avagrad.Tensor instances"
                 raise TypeError(msg)
         else:
             return obj
@@ -145,7 +145,7 @@ class Operation(ABC):
 
         Returns
         -------
-        toydiff.Tensor
+        avagrad.Tensor
             Output tensor.
         """
         raise NotImplementedError("Subclasses must override this method")
@@ -164,7 +164,7 @@ class Operation(ABC):
 
         Parameters
         ----------
-        gradient : toydiff.Tensor
+        gradient : avagrad.Tensor
         """
         if gradient is None:
             gradient = self.get_gradient()
@@ -180,7 +180,7 @@ class Operation(ABC):
 
         Parameters
         ----------
-        gradient : toydiff.Tensor, optional, default: None
+        gradient : avagrad.Tensor, optional, default: None
             If None, a Tensor of 1's of the same shape as the output tensor of
             this operation will be used.
         """
@@ -253,12 +253,12 @@ class BinaryOp(Operation):
 
     Parameters
     ----------
-    tensor_a : toydiff.Tensor
-    tensor_b : toydiff.Tensor
+    tensor_a : avagrad.Tensor
+    tensor_b : avagrad.Tensor
 
     Attributes
     ----------
-    parents : list of toydiff.Tensor
+    parents : list of avagrad.Tensor
     """
 
     __slots__ = ["tensor_a", "tensor_b", "parents"]
@@ -321,17 +321,17 @@ class OperationRunner:
 
     Parameters
     ----------
-    opration : toydiff.Operation
+    opration : avagrad.Operation
         Operation to run.
     tensors : iterable of tensors
         Operands for the operation
 
     Example
     -------
-    >>> import toydiff as tdf
-    >>> tensor = tdf.Tensor([1, 2, 3, 4])
+    >>> import avagrad as ag
+    >>> tensor = ag.Tensor([1, 2, 3, 4])
     >>> args, **kwargs = ...
-    >>> out = tdf.OperationRunner(tdf.core.Add, tensor).run(*args, **kwargs)
+    >>> out = ag.OperationRunner(ag.core.Add, tensor).run(*args, **kwargs)
     """
 
     __slots__ = ["operation"]
@@ -381,14 +381,14 @@ def add(tensor_a: "Tensor", tensor_b: "Tensor", *args, **kwargs) -> "Tensor":
 
     Parameters
     ----------
-    tensor_a : toydiff.Tensor
+    tensor_a : avagrad.Tensor
         Tensor to be added.
-    tensor_b : toydiff.Tensor
+    tensor_b : avagrad.Tensor
         Tensor to be added.
 
     Returns
     -------
-    out : toydiff.Tensor
+    out : avagrad.Tensor
         The sum of tensor_a and tensor_b, element-wise.
     """
     return OperationRunner(Add, tensor_a, tensor_b).run(*args, **kwargs)
@@ -406,14 +406,14 @@ def subtract(
 
     Parameters
     ----------
-    tensor_a : toydiff.Tensor
+    tensor_a : avagrad.Tensor
         Tensor to subtract from.
-    tensor_b : toydiff.Tensor
+    tensor_b : avagrad.Tensor
         Subtracted tensor.
 
     Returns
     -------
-    out : toydiff.Tensor
+    out : avagrad.Tensor
         The difference of tensor_a and tensor_b, element-wise.
     """
     return OperationRunner(Add, tensor_a, -tensor_b).run(*args, **kwargs)
@@ -423,7 +423,7 @@ def subtract(
 class MatrixMultiplication(BinaryOp):
     """Matrix multiplication operation class.
 
-    It implements the forward and backward passes, but `toydiff.matmul`
+    It implements the forward and backward passes, but `avagrad.matmul`
     function should be used to compute the matrix product of two tensors, since
     it will take care of making the appropiate checks and set the gradients.
     """
@@ -455,12 +455,12 @@ def matmul(
 
     Parameters
     ----------
-    tensor_a : toydiff.Tensor
-    tensor_b : toydiff.Tensor
+    tensor_a : avagrad.Tensor
+    tensor_b : avagrad.Tensor
 
     Return
     ------
-    out : toydiff.Tensor
+    out : avagrad.Tensor
         Matrix product of the input tensors.
     """
     return OperationRunner(MatrixMultiplication, tensor_a, tensor_b).run(
@@ -477,16 +477,16 @@ def fma(
 
     Parameters
     ----------
-    tensor_a : toydiff.Tensor
+    tensor_a : avagrad.Tensor
         Tensor A of the matrix multiplication A x B.
-    tensor_b : toydiff.Tensor
+    tensor_b : avagrad.Tensor
         Tensor B of the matrix multiplication A x B.
-    tensor_c : toydiff.Tensor
+    tensor_c : avagrad.Tensor
         Tensor C of the operation (A x B) + C
 
     Returns
     -------
-    toydiff.Tensor
+    avagrad.Tensor
         Output tensor.
 
     Warning
@@ -530,12 +530,12 @@ def multiply(
 
     Paremeters
     ----------
-    tensor_a : toydiff.Tensor
-    tensor_b : toydiff.Tensor
+    tensor_a : avagrad.Tensor
+    tensor_b : avagrad.Tensor
 
     Returns
     -------
-    toydiff.Tensor
+    avagrad.Tensor
     """
     return OperationRunner(Multiply, tensor_a, tensor_b).run(*args, **kwargs)
 
@@ -550,12 +550,12 @@ def divide(
 
     Paremeters
     ----------
-    tensor_a : toydiff.Tensor
-    tensor_b : toydiff.Tensor
+    tensor_a : avagrad.Tensor
+    tensor_b : avagrad.Tensor
 
     Returns
     -------
-    toydiff.Tensor
+    avagrad.Tensor
     """
     return OperationRunner(Multiply, tensor_a, power(tensor_b, -1)).run(
         *args, **kwargs
@@ -601,12 +601,12 @@ def power(tensor_a: "Tensor", tensor_b: "Tensor", *args, **kwargs) -> "Tensor":
 
     Parameters
     ----------
-    tensor_a : toydiff.Tensor
-    tensor_b : toydiff.Tensor
+    tensor_a : avagrad.Tensor
+    tensor_b : avagrad.Tensor
 
     Return
     ------
-    out : toydiff.Tensor
+    out : avagrad.Tensor
         Power operation of the input tensors.
     """
     return OperationRunner(Power, tensor_a, tensor_b).run(*args, **kwargs)
@@ -654,12 +654,12 @@ def maximum(
 
     Paremeters
     ----------
-    tensor_a : toydiff.Tensor
-    tensor_b : toydiff.Tensor
+    tensor_a : avagrad.Tensor
+    tensor_b : avagrad.Tensor
 
     Returns
     -------
-    out : toydiff.Tensor
+    out : avagrad.Tensor
         The maximum of tensor_1 and tensor_b, element-wise.
     """
     return OperationRunner(Maximum, tensor_a, tensor_b).run(*args, **kwargs)
@@ -707,12 +707,12 @@ def minimum(
 
     Paremeters
     ----------
-    tensor_a : toydiff.Tensor
-    tensor_b : toydiff.Tensor
+    tensor_a : avagrad.Tensor
+    tensor_b : avagrad.Tensor
 
     Returns
     -------
-    out : toydiff.Tensor
+    out : avagrad.Tensor
         The minimum of tensor_1 and tensor_b, element-wise.
     """
     return OperationRunner(Minimum, tensor_a, tensor_b).run(*args, **kwargs)
@@ -743,7 +743,7 @@ def log(tensor: "Tensor", *args, **kwargs) -> "Tensor":
 
     Parameters
     ----------
-    tensor : toydiff.Tensor
+    tensor : avagrad.Tensor
     """
     return OperationRunner(Log, tensor).run(*args, **kwargs)
 
@@ -781,12 +781,12 @@ def sigmoid(tensor: "Tensor", *args, **kwargs) -> "Tensor":
 
     Paremters
     ---------
-    tensor : toydiff.Tensor
+    tensor : avagrad.Tensor
         Tensor to apply the sigmoid to.
 
     Returns
     -------
-    out : toydiff.Tensor
+    out : avagrad.Tensor
         Logistic sigmoid.
     """
     return OperationRunner(Sigmoid, tensor).run(*args, **kwargs)
@@ -817,12 +817,12 @@ def negative(tensor: "Tensor", *args, **kwargs) -> "Tensor":
 
     Parameters
     ----------
-    tensor : toydiff.Tensor
+    tensor : avagrad.Tensor
         Input tensor.
 
     Returns
     -------
-    out : toydiff.Tensor
+    out : avagrad.Tensor
         Returned tensor.
     """
     return OperationRunner(Negative, tensor).run(*args, **kwargs)
@@ -853,11 +853,11 @@ def sin(tensor: "Tensor", *args, **kwargs) -> "Tensor":
 
     Parameters
     ----------
-    tensor : toydiff.Tensor
+    tensor : avagrad.Tensor
 
     Return
     ------
-    out : toydiff.Tensor
+    out : avagrad.Tensor
     """
     return OperationRunner(Sin, tensor).run(*args, **kwargs)
 
@@ -887,11 +887,11 @@ def cos(tensor: "Tensor", *args, **kwargs) -> "Tensor":
 
     Parameters
     ----------
-    tensor : toydiff.Tensor
+    tensor : avagrad.Tensor
 
     Return
     ------
-    out : toydiff.Tensor
+    out : avagrad.Tensor
     """
     return OperationRunner(Cos, tensor).run(*args, **kwargs)
 
@@ -921,11 +921,11 @@ def tan(tensor: "Tensor", *args, **kwargs) -> "Tensor":
 
     Parameters
     ----------
-    tensor : toydiff.Tensor
+    tensor : avagrad.Tensor
 
     Return
     ------
-    out : toydiff.Tensor
+    out : avagrad.Tensor
     """
     return OperationRunner(Tan, tensor).run(*args, **kwargs)
 
@@ -936,11 +936,11 @@ def cosh(tensor: "Tensor") -> "Tensor":
 
     Parameters
     ----------
-    tensor : toydiff.Tensor
+    tensor : avagrad.Tensor
 
     Return
     ------
-    out : toydiff.Tensor
+    out : avagrad.Tensor
     """
     return (tensor.exp() + (-tensor).exp()) / 2
 
@@ -950,11 +950,11 @@ def sinh(tensor: "Tensor") -> "Tensor":
 
     Parameters
     ----------
-    tensor : toydiff.Tensor
+    tensor : avagrad.Tensor
 
     Return
     ------
-    out : toydiff.Tensor
+    out : avagrad.Tensor
     """
     return (tensor.exp() - (-tensor).exp()) / 2
 
@@ -994,7 +994,7 @@ def reshape(
 
     Parameters
     ----------
-    tensor : toydiff.Tensor
+    tensor : avagrad.Tensor
         Tensor to be reshaped.
     newshape : int or tuple or ints
         The new shape should be compatible with the original shape. If an
@@ -1011,7 +1011,7 @@ def reshape(
 
     Returns
     -------
-    toydiff.Tensor
+    avagrad.Tensor
         This will be a new view object if possible; otherwise, it will be a
         copy. Note there is no guarantee of the memory layout (C- or Fortran-
         contiguous) of the returned tensor.
@@ -1164,7 +1164,7 @@ def max(tensor: "Tensor", *args, **kwargs) -> "Tensor":
 
     Parameters
     ----------
-    tensor : toydiff.Tensor
+    tensor : avagrad.Tensor
     """
     return OperationRunner(Max, tensor).run(*args, **kwargs)
 
@@ -1197,7 +1197,7 @@ def min(tensor: "Tensor", *args, **kwargs) -> "Tensor":
 
     Parameters
     ----------
-    tensor : toydiff.Tensor
+    tensor : avagrad.Tensor
     """
     return OperationRunner(Min, tensor).run(*args, **kwargs)
 
@@ -1227,12 +1227,12 @@ def sum(tensor: "Tensor", *args, **kwargs) -> "Tensor":
 
     Parameters
     ----------
-    tensor : toydiff.Tensor
+    tensor : avagrad.Tensor
         Elements to sum.
 
     Returns
     -------
-    out : toydiff.Tensor
+    out : avagrad.Tensor
         Added elements.
     """
     return OperationRunner(Sum, tensor).run(*args, **kwargs)
@@ -1313,7 +1313,7 @@ def mean(
 
     Parameters
     ----------
-    tensor : toydiff.Tensor
+    tensor : avagrad.Tensor
     axis : int, optional, default: None
         Axis or axes along which the means are computed. The default is to
         compute the mean of the flattened array.
@@ -1423,7 +1423,7 @@ def empty_like(
 # ------------------------------- Tensor Class --------------------------------
 # -----------------------------------------------------------------------------
 class Tensor:
-    """A toydiff.Tensor is a multi-dimensional matrix containing elements of a
+    """A avagrad.Tensor is a multi-dimensional matrix containing elements of a
     single data type.
 
     Chaining tensors with arbitrary operations will generate a differentiable
@@ -1436,15 +1436,15 @@ class Tensor:
     Tensor creation
     ---------------
     You can create a tensor passing an array or an array-wrappable object:
-    >>> import toydiff as tdf
+    >>> import avagrad as ag
     >>> import numpy as np
-    >>> a = tdf.Tensor([1, 2, 3], track_gradient=True)
-    >>> b = tdf.Tensor(np.random.rand(3, 3), track_gradient=True)
+    >>> a = ag.Tensor([1, 2, 3], track_gradient=True)
+    >>> b = ag.Tensor(np.random.rand(3, 3), track_gradient=True)
 
-    ToyDiff also supports some functions to generate Tensors with ease:
-    >>> tdf.rand((3,3), track_gradient=True)
-    >>> tdf.zeros((3,3), track_gradient=True)
-    >>> tdf.ones_like(a, track_gradient=True)
+    avagrad also supports some functions to generate Tensors with ease:
+    >>> ag.rand((3,3), track_gradient=True)
+    >>> ag.zeros((3,3), track_gradient=True)
+    >>> ag.ones_like(a, track_gradient=True)
 
     Forward computation
     -------------------
@@ -1456,8 +1456,8 @@ class Tensor:
 
     We can add as many operations as we want:
 
-    >>> d = tdf.log(c)
-    >>> e = tdf.sum(d)
+    >>> d = ag.log(c)
+    >>> e = ag.sum(d)
 
     Backward computation
     --------------------
@@ -1545,7 +1545,7 @@ class Tensor:
 
         Returns
         -------
-        toydiff.Tensor
+        avagrad.Tensor
             Detached tensor.
         """
         return Tensor(self.value.copy(), dtype=self.dtype, is_leaf=True)
@@ -1759,7 +1759,7 @@ class Tensor:
 
         Parameters
         ----------
-        gradient : toydiff.Tensor, optional, default: None
+        gradient : avagrad.Tensor, optional, default: None
             Starting gradient. If None, a gradient Tensor of 1s and shape equal
             to self tensor shape will be passed.
         """
