@@ -44,6 +44,8 @@ class Module:
         yield from self._parameters.items()
 
     def _named_complex(self) -> Iterator[Tuple[str, Tensor]]:
+        # TODO: probably need to traverse the graph of modules to get them
+        # topological sort
         for module in self.__dict__:
             if module not in ["_parameters", "_training"]:
                 self._parameters[module] = self.__dict__[module].named_parameters()
@@ -58,9 +60,9 @@ class Module:
     def named_parameters(self) -> Iterator[Tuple[str, Tensor]]:
         # simple module if module does not contain other modules
         if any([isinstance(att, Module) for att in self.__dict__.values()]):
-            return self._named_simple()
-        else:
             return self._named_complex()
+        else:
+            return self._named_simple()
 
     def zero_grad(self, criterion="none") -> None:
         for parameter in self.parameters():
@@ -71,6 +73,12 @@ class Module:
         for i, (name, param) in enumerate(self.named_parameters()):
             state_dict[f"{name}_{i}"] = param
         return state_dict
+
+    def load_parameters(self, named_params_dict):
+        raise NotImplementedError
+
+    def __repr__(self) -> str:
+        return "Module"
 
 
 class Linear(Module):
@@ -104,3 +112,8 @@ class Linear(Module):
             return matmul(X, self.weights.T)
         else:
             return fma(X, self.weights.T, self.bias)
+
+    def __repr__(self) -> str:
+        in_ = self.in_features
+        ou_ = self.out_features
+        return f"Linear(in_features={in_}, out_features={ou_})"
