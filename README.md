@@ -1,23 +1,17 @@
 # Toydiff
-Toydiff is a small toy-package to perform automatic differentiation on 
-scalars. It is built using plain Python and NumPy to be able to handle NumPy
-arrays.
 
-The library consist of a set of operations (not all operations implemented) 
-that `keep track of the gradient`. The operations can compute in `forward` and 
-`backward` modes.
+`toydiff` is a simple automatic differentiation library that I created to wrap
+my head around how autodiff works. It is built using NumPy and SciPy and it has
+been tested using PyTorch as a reference.
+
+The libray is very versatile, and can be used to create and train neural
+networks (WIP, only linear layers for now).
 
 ## Installation
 Normal user:
 ```bash
 git clone https://github.com/Xylambda/toydiff.git
 pip install toydiff/.
-```
-
-alternatively:
-```bash
-git clone https://github.com/Xylambda/toydiff.git
-pip install toydiff/. -r toydiff/requirements-base.txt
 ```
 
 Developer:
@@ -28,66 +22,86 @@ pip install -e toydiff/. -r toydiff/requirements-dev.txt
 
 ## Tests
 To run test, you must install the library as a `developer`.
-```bash
-cd toydiff/
-sh run_tests.sh
-```
 
-alternatively:
 ```bash
 cd toydiff/
 pytest -v tests/
 ```
 
-## Usage
-You can build simple computational graphs using toydiff. The parameter 
-`incoming_grad` let's you backpropagate the gradients. Let's build the 
-computational graph for the function *f (x, y, z) = (x + y)·z*. 
-This example comes from [Stanford backprop. lecture.](http://cs231n.stanford.edu/slides/2017/cs231n_2017_lecture4.pdf)
+## Differentiable operations
+The use is almost the same as the one you would expect from PyTorch:
 
-We will call *q = (x + y)*. Assume that *x = -2, y = 5, z = -4*; then:
 ```python
-from toydiff.ops import Add, Multiply
-
-
-x = -2
-y = 5
-z = -4
-
-# create graph
-q = Add()
-f = Multiply()
-
-# run graph
-f_val = f(q(x, y), z)
-
-# see gradients
-df_dq, df_dz = f.backward(incoming_grad = 1) # df/df = 1
-dq_dx, dq_dy = q.backward(incoming_grad=df_dq) # propagate gradient
+>>> import toydiff as tdf
+>>> # use `track_gradient=True` to allow backward to fill the gradients
+>>> a = tdf.random.rand((3,3), track_gradient=True)
+>>> b = tdf.random.rand((3,3), track_gradient=True)
+>>> c = tdf.matmul(a, b)
+>>> d = tdf.log(c)
+>>> e = tdf.sum(d)
 ```
 
-You can also work with NumPy arrays (just remember operations are applied
-element-wisely).
+Variable `e` is a Tensor that allows to backpropagate:
+```python
+>>> e
+Tensor(0.22356361, dtype=float32, backward_fn=<Sum(ReduceOp).Backward>)
+>>> e.backward()  # can pass a gradient tensor too if needed
+>>> a.gradient
+Tensor([[0.7647713, 2.643686 , 3.2196524],
+       [0.4147661, 1.494362 , 1.8254415],
+       [0.5436615, 1.9049336, 2.524307 ]], dtype=float32, track_gradient=False)
+```
+
+The library tracks intermediate gradients by default, without needing to
+perform extra steps to do so:
+
+```python
+>>> c.gradient
+Tensor([[1.1955129 , 1.6154591 , 1.1438175 ],
+       [0.7210128 , 0.91004455, 0.60389584],
+       [0.83467734, 1.4432425 , 0.75835925]], dtype=float32, track_gradient=False)
+```
+
+## Neural networks (WIP)
+
+The module `nn` contains all necessary functionality to create and optimize
+basic neural networks:
+
 ```python
 import numpy as np
+import toydiff as tdf
+from toydiff.nn.blocks import Linear
+from toydiff.nn.optim import SGD
+from toydiff.nn.functional import mse_loss
 
-from toydiff.ops import Sin, Cos
-from matplotlib import pyplot as plt
+# generate data
+x = np.arange(-1, 1, 0.01).reshape(-1,1)
+y = 2 * x + np.random.normal(size=(len(x), 1), scale=0.3)
 
+# create model
+model = Linear(1, 1, bias=False)
 
-x = np.arange(-5,5, 0.2)
+# wrap your data in Tensors with `track_gradient=True`
+feat = tdf.Tensor(X, track_gradient=True)
+labels = tdf.Tensor(y, track_gradient=True)
 
-sin = Sin()
-cos = Cos()
+# pass model to optimizer
+optimizer = SGD(model)
 
-fig, ax = plt.subplots(nrows=1, ncols=2, figsize=(15,4))
-ax[0].plot(sin(x), label="sin(x)")
-ax[0].plot(sin.backward(incoming_grad=1), label="d/dx sin(x)")
-ax[0].legend()
+# build train loop
+losses = []
+n_epochs = 15_000
+for i in range(n_epochs):
+    # zero grads if you do not want to accumulate gradients
+    optimizer.zero_grad()
 
-ax[1].plot(cos(x), label="cos(x)")
-ax[1].plot(cos.backward(incoming_grad=1), label="d/dx cos(x)")
-ax[1].legend()
+    # forward pass, loss and backward pass
+    out = model(feat)
+    loss = mse_loss(out, labels)  # minimize sum of square differences
+    loss.backward()
+
+    # use gradients to update parameters
+    optimizer.step()
+    
+    losses.append(loss.value)
 ```
-
-![Sin_Cos](sin_cos.png)
