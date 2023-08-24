@@ -1,5 +1,5 @@
 <p align="center">
-  <img src="img/logo.png" width="700">
+  <img src="img/logo.png" width="500">
 </p>
 
 `avagrad` is a simple automatic differentiation library that I created to wrap
