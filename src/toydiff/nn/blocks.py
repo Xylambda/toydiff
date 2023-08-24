@@ -3,7 +3,8 @@ Pool of optimizable building blocks.
 """
 from abc import abstractmethod
 from collections import OrderedDict
-from typing import Dict, Iterator, Tuple
+from itertools import chain
+from typing import Dict, Iterator, Tuple, Optional
 
 from toydiff.core import Tensor, fma, matmul
 from toydiff.random import randn
@@ -12,15 +13,23 @@ __all__ = ["Module", "Linear"]
 
 
 class Module:
-    __slots__ = ["_parameters"]
-
+    _parameters: Dict[str, Optional[Tensor]]
+    _training: bool
     def __init__(self):
-        self._parameters = {}
+        super().__setattr__('_parameters', OrderedDict())
+        super().__setattr__('_training', True)
 
     def __call__(self, *args, **kwargs) -> Tensor:
         return self.forward(*args, **kwargs)
 
     def register_parameter(self, key, value) -> None:
+        """Registers a parameter to make it optimizable."""
+        if '_parameters' not in self.__dict__:
+            raise AttributeError(
+                "cannot assign parameter before Module.__init__() call"
+            )
+
+        # each param should have a unique identifier
         self._parameters[key] = value
 
     @abstractmethod
@@ -28,10 +37,30 @@ class Module:
         pass
 
     def parameters(self) -> Iterator[Tensor]:
-        yield from self._parameters.values()
+        for _, param in self.named_parameters():
+            yield param
+
+    def _named_simple(self) -> Iterator[Tuple[str, Tensor]]:
+        yield from self._parameters.items()
+
+    def _named_complex(self) -> Iterator[Tuple[str, Tensor]]:
+        for module in self.__dict__:
+            if module not in ["_parameters", "_training"]:
+                self._parameters[module] = self.__dict__[module].named_parameters()
+
+        # chain generators
+        output = chain()
+        for gen in self._parameters.values():
+            output = chain(output, gen)
+
+        yield from output
 
     def named_parameters(self) -> Iterator[Tuple[str, Tensor]]:
-        yield from self._parameters.items()
+        # simple module if module does not contain other modules
+        if any([isinstance(att, Module) for att in self.__dict__.values()]):
+            return self._named_simple()
+        else:
+            return self._named_complex()
 
     def zero_grad(self, criterion="none") -> None:
         for parameter in self.parameters():
@@ -46,7 +75,6 @@ class Module:
 
 class Linear(Module):
     __slots__ = ["in_features", "out_features", "bias", "weights"]
-
     def __init__(self, in_features, out_features, bias=False):
         super().__init__()
 
@@ -55,7 +83,7 @@ class Linear(Module):
 
         # attributes
         self.weights, self.bias = self._initialize_parameters(bias)
-        self.register_parameter("weight", self.weights)
+        super().register_parameter("weight", self.weights)
 
         if bias:
             self.register_parameter("bias", self.bias)

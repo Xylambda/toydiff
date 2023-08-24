@@ -1,9 +1,11 @@
 """
 Useful utilities for the use of toydiff.
 """
-from typing import List
+import numpy as np
+from numpy.typing import ArrayLike
+from typing import List, Tuple
 
-__all__ = ["topological_sort", "draw_graph", "collapse", "gradient_collapse"]
+__all__ = ["topological_sort", "draw_graph", "gradient_collapse"]
 
 
 def topological_sort(last: "Tensor") -> List["Tensor"]:
@@ -38,58 +40,55 @@ def topological_sort(last: "Tensor") -> List["Tensor"]:
 
 
 def draw_graph(last_node: "Tensor"):
-    sorted_tensors = topological_sort(last_node)
+    raise NotImplementedError("Not implement func")
 
 
+def gradient_collapse(
+    data_a: ArrayLike,
+    data_b: ArrayLike,
+    gradient_a: ArrayLike,
+    gradient_b: ArrayLike,
+) -> Tuple[ArrayLike, ArrayLike]:
+    """Collapse gradient helper function.
 
-def collapse(arr, broadcast_arr, to_collapse):
-    """
+    When forward operation needed a broadcast of one of the arrays, the
+    gradient of the broadcast array needs to be adjusted to match the original
+    array shape.
+
+    See References to know the author of this code.
+
     Parameters
+    ---------
+    data_a : numpy.ndarray
+    data_b : numpy.ndarray
+    gradient : numpy.ndarray
+        Incoming gradient of the operations.
+
+    Returns
+    -------
+    grad_a : numpy.ndarray
+    grad_b : numpy.ndarray
+
+    References
     ----------
-    arr : numpy.ndarray
-        Array of bigger dimensions. `broadcast_arr` has been broadcast
-        to match the shape of `arr`.
-    broadcast_arr : numpy.ndarray
-        Broacast array in its original form (non-broadcast).
-    to_collapse : numpy.ndarry
-        Array to collapse to match `broadcast_arr` array. Its shape is
-        the result of the operation between `arr` and `broadcast_arr`.
+    .. [1] StackOverflow - More Pythonic Way to Compute derivatives of
+       broadcasting addition in numpy
+       https://stackoverflow.com/questions/45428696/more-pythonic-way-to-
+       compute-derivatives-of-broadcast-addition-in-numpy
     """
-    target_shape = broadcast_arr.shape
-    current_shape = to_collapse.shape
+    br_a, br_b = np.broadcast_arrays(data_a, data_b)
+    axes_a = tuple(
+        i
+        for i, (da, db) in enumerate(zip(br_a.strides, br_b.strides))
+        if da == 0 and db != 0
+    )
+    axes_b = tuple(
+        i
+        for i, (da, db) in enumerate(zip(br_a.strides, br_b.strides))
+        if da != 0 and db == 0
+    )
 
-    diff_dims = abs(arr.ndim - broadcast_arr.ndim)
-    for _ in range(diff_dims):
-        to_collapse = to_collapse.sum(axis=0)
+    collapsed_a = np.sum(gradient_a, axes_a).reshape(data_a.shape)
+    collapsed_b = np.sum(gradient_b, axes_b).reshape(data_b.shape)
 
-    if broadcast_arr.size == 1:
-        to_collapse = to_collapse.sum(keepdims=True)
-
-    # if gradient shape does not match, we further collapse
-    if target_shape != to_collapse.shape:
-        try:
-            to_collapse = to_collapse.reshape(target_shape)
-        except:
-            axes = []
-            for i, (d1, d2) in enumerate(zip(to_collapse.shape, target_shape)):
-                if d1 != d2:
-                    axes.append(i)
-            
-            for ax in axes:
-                to_collapse = to_collapse.sum(axis=ax)
-
-            to_collapse = to_collapse.reshape(target_shape)
-    
-    return to_collapse
-
-
-def gradient_collapse(arr_a, arr_b, grad_a, grad_b):
-    if grad_a.shape != arr_a.shape:
-        # collapse grad_a
-        grad_a = collapse(arr_b, arr_a, grad_a)
-
-    if grad_b.shape != arr_b.shape:
-        # collapse grad_b
-        grad_b = collapse(arr_a, arr_b, grad_b)
-    
-    return grad_a, grad_b
+    return collapsed_a, collapsed_b

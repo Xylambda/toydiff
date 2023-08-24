@@ -22,7 +22,7 @@ The module is structured as follows:
 
 """
 import warnings
-from abc import abstractmethod
+from abc import abstractmethod, ABC
 from typing import List, Literal, Optional, Tuple, Type, Union
 
 import numpy as np
@@ -79,7 +79,7 @@ __OTHER = [
 __all__ = ["Tensor"] + __UNARY_OPS + __BINARY_OPS + __REDUCE_OPS + __OTHER
 
 
-class Operation:
+class Operation(ABC):
     """Base class to create differentiable operations.
 
     To create an operation you must implement the forward and backward passes,
@@ -186,6 +186,34 @@ class Operation:
         """
         raise NotImplementedError("Subclasses must override this method")
 
+    # TODO, DISC: nasty, nasty function ...
+    def try_reshape(self, tensor, grad) -> None:
+        """Nasty reshape function.
+
+        After all gradient collapse, there can still be some cases where
+        gradient tensor does not have the appropiate shape but its values are
+        correct, e.g. (1,1) vs (1, ).
+
+        This functions attemps a last reshape to match the associated tensor
+        shape.
+
+        Functions modifies gradient value in-place if shapes do not match and
+        reshape can be done.
+        """
+        t_shape = tensor.shape
+        grad_shape = grad.shape
+        grad_val = grad.value
+
+        if t_shape != grad_shape:
+            try:
+                grad.value = grad_val.reshape(t_shape)
+            except:
+                msg = (
+                    f"Wrong gradient shape {grad_shape} for a tensor of shape"
+                    f" {t_shape}"
+                )
+                raise GradientShapeError(msg)
+
 
 class UnaryOp(Operation):
     """Base class to implement unary operations."""
@@ -206,13 +234,7 @@ class UnaryOp(Operation):
 
     def _set_gradients(self, gradient) -> None:
         if self.tensor.track_gradient:
-            if self.tensor.shape != gradient.shape:
-                msg = (
-                    f"Wrong gradient shape {gradient.shape} for a tensor of"
-                    f" shape {self.tensor.shape}"
-                )
-                raise GradientShapeError(msg)
-
+            self.try_reshape(self.tensor, gradient)
             if self.tensor.gradient is None:
                 self.tensor.gradient = gradient
             else:
@@ -264,26 +286,14 @@ class BinaryOp(Operation):
         self, gradient_a: "Tensor", gradient_b: "Tensor"
     ) -> None:
         if self.tensor_a.track_gradient:
-            if self.tensor_a.shape != gradient_a.shape:
-                msg = (
-                    f"Wrong gradient shape {gradient_a.shape} for a tensor of"
-                    f" shape {self.tensor_a.shape}"
-                )
-                raise GradientShapeError(msg)
-
+            self.try_reshape(self.tensor_a, gradient_a)
             if self.tensor_a.gradient is None:
                 self.tensor_a.gradient = gradient_a
             else:
                 self.tensor_a.gradient.value += gradient_a.value
 
         if self.tensor_b.track_gradient:
-            if self.tensor_b.shape != gradient_b.shape:
-                msg = (
-                    f"Wrong gradient shape {gradient_b.shape} for a tensor of"
-                    f" shape {self.tensor_b.shape}"
-                )
-                raise GradientShapeError(msg)
-
+            self.try_reshape(self.tensor_b, gradient_b)
             if self.tensor_b.gradient is None:
                 self.tensor_b.gradient = gradient_b
             else:
@@ -356,13 +366,7 @@ class Add(BinaryOp):
         data_a, data_b = self.get_value()
         np_grad = gradient.numpy()
 
-        grad_a = np_grad
-        grad_b = np_grad
-
-        a_dims = data_a.ndim
-        b_dims = data_b.ndim
-
-        grad_a, grad_b = gradient_collapse(data_a, data_b, grad_a, grad_b)
+        grad_a, grad_b = gradient_collapse(data_a, data_b, np_grad, np_grad)
         self._set_gradients(Tensor(grad_a), Tensor(grad_b))
 
     def __repr__(self):
@@ -465,27 +469,33 @@ def matmul(
 
 
 # -----------------------------------------------------------------------------
-class FusedMultiplyAdd:
-    def forward(self) -> "Tensor":
-        pass
-
-    def backward(self, gradient: "Tensor" = None) -> None:
-        pass
-
-    def __repr__(self) -> str:
-        return "FusedMultiplyAdd(TernaryOp)"
-
-
+# TODO: implement a more low-level operations
 def fma(
     tensor_a: "Tensor", tensor_b: "Tensor", tensor_c: "Tensor"
 ) -> "Tensor":
     """Fused matrix multiplication and addition operator.
 
-    Currently, the operation is not performed by fusing the operations but by
+    Parameters
+    ----------
+    tensor_a : toydiff.Tensor
+        Tensor A of the matrix multiplication A x B.
+    tensor_b : toydiff.Tensor
+        Tensor B of the matrix multiplication A x B.
+    tensor_c : toydiff.Tensor
+        Tensor C of the operation (A x B) + C
+
+    Returns
+    -------
+    toydiff.Tensor
+        Output tensor.
+
+    Warning
+    -------
+    Currently, this operation is not performed by fusing the operations but by
     chaining them. Expect this to change in the future.
     """
     # TODO: https://github.com/nschloe/pyfma
-    return matmul(tensor_a, tensor_b) + tensor_c
+    return add(matmul(tensor_a, tensor_b), tensor_c)
 
 
 # -----------------------------------------------------------------------------

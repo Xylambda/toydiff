@@ -75,10 +75,8 @@ from toydiff.nn.optim import SGD
 from toydiff.nn.functional import mse_loss
 
 # generate data
-X = np.arange(-1, 1, 0.01)
-y = 2 * X + np.random.normal(size=len(X), scale=0.3)
-X = X.reshape(-1,1)
-y = y.reshape(-1,1)
+x = np.arange(-1, 1, 0.01).reshape(-1,1)
+y = 2 * x + np.random.normal(size=(len(x), 1), scale=0.3)
 
 # create model
 model = Linear(1, 1, bias=False)
@@ -91,7 +89,6 @@ labels = tdf.Tensor(y, track_gradient=True)
 optimizer = SGD(model)
 
 # build train loop
-# we want to minimize the sum of squares
 losses = []
 n_epochs = 15_000
 for i in range(n_epochs):
@@ -100,7 +97,7 @@ for i in range(n_epochs):
 
     # forward pass, loss and backward pass
     out = model(feat)
-    loss = mse_loss(out, labels)
+    loss = mse_loss(out, labels)  # we want to minimize the sum of squares
     loss.backward()
 
     # use gradients to update parameters
