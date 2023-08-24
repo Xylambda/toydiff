@@ -34,7 +34,7 @@ setup(
     install_requires=[
         "numpy",
         "scipy",
-        "pyfma",  # fused multiply-add
+        #"pyfma",  # fused multiply-add
     ],
     extras_require={
         "test": [
