@@ -14,11 +14,12 @@ The module is structured as follows:
     2. Then, a class is defined for each operation. Each class extends the
     appropiate base class.
 
-    3. After each class, a function is created. The function makes use of the
-    class and adds the backward function if needed to the result tensor.
+    3. After each class, a function is created. Using this function will be
+    enough to generate a computational graph from which to obtain the
+    derivatives.
 
     4. The Tensor class is created using the above function and, if possible,
-    dunder/magic methods are used to ensure a smooth usage of the library.
+    dunder/magic methods are used to ensure a smooth use of the library.
 
 """
 import warnings
@@ -159,7 +160,7 @@ class Operation(ABC):
         """Actual backward call.
 
         This method ensures the passed gradient is not None and then calls
-        the backward method that is implement for this operation using the
+        the backward method that is implemented for this operation using the
         aforementioned gradient.
 
         Parameters
@@ -1766,7 +1767,7 @@ class Tensor:
         if self.is_leaf:
             warn = (
                 "Calling 'backward' on a leaf tensor will have no effect other"
-                " than filling its gradient with ones"
+                " than filling its gradient with ones or passed gradient"
             )
             warnings.warn(warn)
 

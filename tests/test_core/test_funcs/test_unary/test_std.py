@@ -1,6 +1,6 @@
 import torch
 import numpy as np
-import avagrad as tdf
+import avagrad as ag
 from avagrad.testing import generate_input
 
 

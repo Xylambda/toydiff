@@ -1,4 +1,4 @@
-import avagrad as tdf
+import avagrad as ag
 import numpy as np
 import torch
 
@@ -9,7 +9,7 @@ RTOL = 1e-06
 def test_1d():
     # test 1d
     (t1, t1_torch), (t2, t2_torch) = generate_input((3,))
-    out = tdf.multiply(t1, t2)
+    out = ag.multiply(t1, t2)
     out_torch = torch.multiply(t1_torch, t2_torch)
 
     # call backward
@@ -35,7 +35,7 @@ def test_2d():
     # test 2d
     (t1, t1_torch) = generate_input((3,3))[0]
     (t2, t2_torch) = generate_input((3,))[0]
-    out = tdf.multiply(t1, t2)
+    out = ag.multiply(t1, t2)
     out_torch = torch.multiply(t1_torch, t2_torch)
 
     # call backward
@@ -62,7 +62,7 @@ def test_2d_2d():
     # test 2d
     (t1, t1_torch) = generate_input((3,3))[0]
     (t2, t2_torch) = generate_input((3,1))[0]
-    out = tdf.multiply(t1, t2)
+    out = ag.multiply(t1, t2)
     out_torch = torch.multiply(t1_torch, t2_torch)
 
     # call backward
@@ -89,7 +89,7 @@ def test_3d_1d():
     # test 2d
     (t1, t1_torch) = generate_input((3,3,3))[0]
     (t2, t2_torch) = generate_input((3,))[0]
-    out = tdf.multiply(t1, t2)
+    out = ag.multiply(t1, t2)
     out_torch = torch.multiply(t1_torch, t2_torch)
 
     # call backward
@@ -116,7 +116,7 @@ def test_3d_2d():
     # test 2d
     (t1, t1_torch) = generate_input((3,3,3))[0]
     (t2, t2_torch) = generate_input((3,1))[0]
-    out = tdf.multiply(t1, t2)
+    out = ag.multiply(t1, t2)
     out_torch = torch.multiply(t1_torch, t2_torch)
 
     # call backward
@@ -143,7 +143,7 @@ def test_2d_3d():
     # test 2d
     (t1, t1_torch) = generate_input((3,3))[0]
     (t2, t2_torch) = generate_input((3,1,3))[0]
-    out = tdf.multiply(t1, t2)
+    out = ag.multiply(t1, t2)
     out_torch = torch.multiply(t1_torch, t2_torch)
 
     # call backward
@@ -172,7 +172,7 @@ def test_3d_3d():
     # test 2d
     (t1, t1_torch) = generate_input((4,6,2))[0]
     (t2, t2_torch) = generate_input((1,1,1))[0]
-    out = tdf.multiply(t1, t2)
+    out = ag.multiply(t1, t2)
     out_torch = torch.multiply(t1_torch, t2_torch)
 
     # call backward
@@ -199,7 +199,7 @@ def test_3d_3d_2():
     # test 2d
     (t1, t1_torch) = generate_input((4,6,2))[0]
     (t2, t2_torch) = generate_input((1,1,2))[0]
-    out = tdf.multiply(t1, t2)
+    out = ag.multiply(t1, t2)
     out_torch = torch.multiply(t1_torch, t2_torch)
 
     # call backward
@@ -225,7 +225,7 @@ def test_4d_1d():
     # test 2d
     (t1, t1_torch) = generate_input((4,6,2,7))[0]
     (t2, t2_torch) = generate_input((1,))[0]
-    out = tdf.multiply(t1, t2)
+    out = ag.multiply(t1, t2)
     out_torch = torch.multiply(t1_torch, t2_torch)
 
     # call backward

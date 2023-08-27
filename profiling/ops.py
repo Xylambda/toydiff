@@ -1,6 +1,6 @@
 import argparse
 import cProfile
-import avagrad as tdf
+import avagrad as ag
 from functools import partial
 from pathlib import Path
 
@@ -13,7 +13,7 @@ def prof_func(func: callable, name: str, size: int):
     profiler.enable()
     func()
     profiler.disable()
-    version = tdf.__version__
+    version = ag.__version__
     folder = PROFS_PATH / version
     folder.mkdir(exist_ok=True)
     profiler.dump_stats(folder / f"n={name}_s={size}.prof")
@@ -22,10 +22,10 @@ def prof_func(func: callable, name: str, size: int):
 # -----------------------------------------------------------------------------
 def test_matmul(size: int):
     def exec(a, b):
-        tdf.matmul(a, b)
+        ag.matmul(a, b)
 
-    a = tdf.rand((size, size))
-    b = tdf.rand((size, size))
+    a = ag.rand((size, size))
+    b = ag.rand((size, size))
     func = partial(exec, a=a, b=b)
     prof_func(func, "MatMul", size)
 
@@ -34,9 +34,9 @@ def test_matmul_backward(size: int):
     def exec(c):
         c.backward()
 
-    a = tdf.rand((size, size), track_gradient=True)
-    b = tdf.rand((size, size), track_gradient=True)
-    c = tdf.matmul(a, b)
+    a = ag.rand((size, size), track_gradient=True)
+    b = ag.rand((size, size), track_gradient=True)
+    c = ag.matmul(a, b)
     func = partial(exec, c=c)
     prof_func(func, "MatMul.Backward", size)
 

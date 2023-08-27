@@ -1,6 +1,6 @@
 import torch
 import numpy as np
-import avagrad as tdf
+import avagrad as ag
 from avagrad.testing import generate_input
 
 
@@ -11,7 +11,7 @@ def test_log():
     # -------------------------------------------------------------------------
     # test 1d
     tensor, tensor_torch = generate_input((5, ))[0]
-    out = tdf.log(tensor)
+    out = ag.log(tensor)
     out_torch = torch.log(tensor_torch)
 
     # call backward
@@ -31,7 +31,7 @@ def test_log():
     # -------------------------------------------------------------------------
     # test 2d
     tensor, tensor_torch = generate_input((5, 5))[0]
-    out = tdf.log(tensor)
+    out = ag.log(tensor)
     out_torch = torch.log(tensor_torch)
 
     # call backward

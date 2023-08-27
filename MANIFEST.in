@@ -1,7 +1,7 @@
 include pyproject.toml
 include versioneer.py
-include toydiff/_version.py
-include src/toydiff/_version.py
+include avagrad/_version.py
+include src/avagrad/_version.py
 
 # Include the README
 # include *.md

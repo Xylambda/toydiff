@@ -1,4 +1,4 @@
-import avagrad as tdf
+import avagrad as ag
 import numpy as np
 import torch
 
@@ -9,7 +9,7 @@ RTOL = 1e-06
 def test_maximum():
     # test 1d
     (t1, t1_torch), (t2, t2_torch) = generate_input((3,))
-    out = tdf.maximum(t1, t2)
+    out = ag.maximum(t1, t2)
     out_torch = torch.maximum(t1_torch, t2_torch)
 
     # call backward
@@ -34,7 +34,7 @@ def test_maximum():
     # test 2d
     (t1, t1_torch) = generate_input((3,3))[0]
     (t2, t2_torch) = generate_input((3,))[0]
-    out = tdf.maximum(t1, t2)
+    out = ag.maximum(t1, t2)
     out_torch = torch.maximum(t1_torch, t2_torch)
 
     # call backward
