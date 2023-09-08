@@ -34,7 +34,6 @@ setup(
     install_requires=[
         "numpy",
         "scipy",
-        #"pyfma",  # fused multiply-add
     ],
     extras_require={
         "test": [
@@ -44,6 +43,10 @@ setup(
         "profile": [
             "snakeviz",
             "perfplot",
+        ],
+        "docs": [
+            "sphinx",
+            "furo",
         ]
     }
 )

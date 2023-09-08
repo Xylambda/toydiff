@@ -74,10 +74,18 @@ __OTHER = [
     "zeros_like",
     "empty",
     "empty_like",
-    "fma",  # TODO: at some point, we may need to add ternary ops
 ]
 
-__all__ = ["Tensor"] + __UNARY_OPS + __BINARY_OPS + __REDUCE_OPS + __OTHER
+__TERNARY = ["fma"]
+
+__all__ = (
+    ["Tensor"]
+    + __UNARY_OPS
+    + __BINARY_OPS
+    + __REDUCE_OPS
+    + __OTHER
+    + __TERNARY
+)
 
 
 class Operation(ABC):
@@ -308,6 +316,88 @@ class ReduceOp(UnaryOp):
         super().__init__(tensor=tensor)
 
 
+class TernaryOp(Operation):  # where, fma
+    """Base class to implement ternary operations.
+
+    The method `get_value` will return the NumPy arrays of the `tensor_a`,
+    `tensor_b` and `tensor_c` in the same order they were passed.
+
+    Similarly, the method `_set_gradients` expects the first, second and thrid
+    arguments to be the gradients for the first, second and third tensors
+    passed in the constructors (respectively).
+
+    Parameters
+    ----------
+    tensor_a : avagrad.Tensor
+    tensor_b : avagrad.Tensor
+    tensor_c : avagrad.Tensor
+
+    Attributes
+    ----------
+    parents : list of avagrad.Tensor
+    """
+
+    __slots__ = ["tensor_a", "tensor_b", "tensor_c", "parents"]
+
+    def __init__(
+        self, tensor_a: "Tensor", tensor_b: "Tensor", tensor_c: "Tensor"
+    ):
+        tensor_a = self.check_dtype_and_cast(tensor_a)
+        tensor_b = self.check_dtype_and_cast(tensor_b)
+        tensor_c = self.check_dtype_and_cast(tensor_c)
+
+        if (
+            tensor_a.track_gradient
+            or tensor_b.track_gradient
+            or tensor_c.track_gradient
+        ):
+            track_gradient = True
+        else:
+            track_gradient = False
+
+        super().__init__(track_gradient=track_gradient)
+
+        self.tensor_a = tensor_a
+        self.tensor_b = tensor_b
+        self.tensor_c = tensor_c
+
+        self.parents = [self.tensor_a, self.tensor_b, self.tensor_c]
+
+    def get_value(self) -> np.ndarray:
+        return (
+            self.tensor_a.numpy(),
+            self.tensor_b.numpy(),
+            self.tensor_c.numpy(),
+        )
+
+    def _set_gradients(
+        self,
+        gradient_a: "Tensor",
+        gradient_b: "Tensor",
+        gradient_c: "Tensor",
+    ) -> None:
+        if self.tensor_a.track_gradient:
+            self.try_reshape(self.tensor_a, gradient_a)
+            if self.tensor_a.gradient is None:
+                self.tensor_a.gradient = gradient_a
+            else:
+                self.tensor_a.gradient.value += gradient_a.value
+
+        if self.tensor_b.track_gradient:
+            self.try_reshape(self.tensor_b, gradient_b)
+            if self.tensor_b.gradient is None:
+                self.tensor_b.gradient = gradient_b
+            else:
+                self.tensor_b.gradient.value += gradient_b.value
+
+        if self.tensor_c.track_gradient:
+            self.try_reshape(self.tensor_c, gradient_c)
+            if self.tensor_c.gradient is None:
+                self.tensor_c.gradient = gradient_c
+            else:
+                self.tensor_c.gradient.value += gradient_c.value
+
+
 class OperationRunner:
     """Operation runner will take care of running an operation appropiately.
 
@@ -329,10 +419,10 @@ class OperationRunner:
 
     Example
     -------
-    >>> import avagrad as ag
+    >>> from avagrad.core import Sum, OperationRunner, Tensor
     >>> tensor = ag.Tensor([1, 2, 3, 4])
-    >>> args, **kwargs = ...
-    >>> out = ag.OperationRunner(ag.core.Add, tensor).run(*args, **kwargs)
+    >>> args, kwargs = ...
+    >>> out = OperationRunner(Sum, tensor).run(*args, **kwargs)
     """
 
     __slots__ = ["operation"]
@@ -353,6 +443,83 @@ class OperationRunner:
 # -----------------------------------------------------------------------------
 # ----------------------------- BINARY OPERATIONS -----------------------------
 # -----------------------------------------------------------------------------
+class Where(TernaryOp):
+    def forward(self, *args, **kwargs) -> "Tensor":
+        return super().forward(*args, **kwargs)
+
+    def backward(self, gradient: Optional["Tensor"] = None) -> None:
+        pass
+
+
+# -----------------------------------------------------------------------------
+class FusedMatMulAdd(TernaryOp):
+    __slots__ = ["mm"]
+
+    def __init__(
+        self, tensor_a: "Tensor", tensor_b: "Tensor", tensor_c: "Tensor"
+    ):
+        super().__init__(tensor_a, tensor_b, tensor_c)
+        self.mm = None
+
+    def forward(self) -> "Tensor":
+        data_a, data_b, data_c = self.get_value()
+        self.mm = np.matmul(data_a, data_b)
+        return Tensor(
+            self.mm + data_c,
+            is_leaf=False,
+            track_gradient=self.track_gradient,
+            parents=self.parents,
+            op_name=self.__repr__(),
+        )
+
+    def backward(self, gradient: Optional["Tensor"] = None) -> None:
+        data_a, data_b, data_c = self.get_value()
+        grad_np = gradient.numpy()
+
+        grad_a = Tensor(np.matmul(grad_np, data_b.T))
+        grad_b = Tensor(np.matmul(data_a.T, grad_np))
+
+        # consider a the matmul and b the tensor c
+        _, grad_c = gradient_collapse(self.mm, data_c, self.mm, grad_np)
+        self._set_gradients(grad_a, grad_b, Tensor(grad_c))
+
+    def __repr__(self):
+        return "FusedMatMulAdd(TernaryOp)"
+
+
+def fma(
+    tensor_a: "Tensor", tensor_b: "Tensor", tensor_c: "Tensor"
+) -> "Tensor":
+    """Fused matrix multiplication and addition operator.
+
+    Performs a matrix multiplication of `tensor_a` and `tensor_b` and adds the
+    result to `tensor_c`.
+
+    Parameters
+    ----------
+    tensor_a : avagrad.Tensor
+        Tensor A of the matrix multiplication A x B.
+    tensor_b : avagrad.Tensor
+        Tensor B of the matrix multiplication A x B.
+    tensor_c : avagrad.Tensor
+        Tensor C of the operation (A x B) + C
+
+    Returns
+    -------
+    avagrad.Tensor
+        Output tensor.
+
+    Warning
+    -------
+    Currently, this operation is not performed by fusing the operations but by
+    chaining them in NumPy: np.matmul(a, b) + c
+    """
+    return OperationRunner(FusedMatMulAdd, tensor_a, tensor_b, tensor_c).run()
+
+
+# -----------------------------------------------------------------------------
+# ----------------------------- BINARY OPERATIONS -----------------------------
+# -----------------------------------------------------------------------------
 class Add(BinaryOp):
     def forward(self, *args, **kwargs) -> "Tensor":
         data_a, data_b = self.get_value()
@@ -360,6 +527,7 @@ class Add(BinaryOp):
             np.add(data_a, data_b, *args, **kwargs),
             parents=self.parents,
             is_leaf=False,
+            track_gradient=self.track_gradient,
             op_name=self.__repr__(),
         )
 
@@ -435,6 +603,7 @@ class MatrixMultiplication(BinaryOp):
             np.matmul(data_a, data_b, *args, **kwargs),
             parents=self.parents,
             is_leaf=False,
+            track_gradient=self.track_gradient,
             op_name=self.__repr__(),
         )
 
@@ -470,33 +639,62 @@ def matmul(
 
 
 # -----------------------------------------------------------------------------
-# TODO: implement a more low-level operations
-def fma(
-    tensor_a: "Tensor", tensor_b: "Tensor", tensor_c: "Tensor"
-) -> "Tensor":
-    """Fused matrix multiplication and addition operator.
+class BatchMatrixMultiplication(BinaryOp):
+    def __init__(
+        self, tensor_a: "Tensor", tensor_b: "Tensor", tensor_c: "Tensor"
+    ):
+        if tensor_a.ndim != 3:
+            raise Exception("'tensor_a' must be a 3D tensor")
 
-    Parameters
+        if tensor_b.ndim != 3:
+            raise Exception("'tensor_b' must be a 3D tensor")
+
+        super().__init__(tensor_a, tensor_b, tensor_c)
+
+    def forward(self):
+        data_a, data_b = self.get_value()
+        # np.stack([a[i] @ b[i] for i in range(a.shape[0])])
+        return Tensor(
+            np.eisum("ijk, ikz -> ijz", data_a, data_b),
+            parents=self.parents,
+            is_leaf=False,
+            track_gradient=self.track_gradient,
+            is_leaf=False,
+            op_name=self.__repr__(),
+        )
+
+    def backward(self, gradient=None):
+        data_a, data_b = self.get_value()
+        grad_np = gradient.numpy()
+        grad_a = np.einsum(
+            "ijk, ikz -> ijz",
+            grad_np,
+            np.transpose(data_b.detach().numpy(), (0, 2, 1)),
+        )
+        grad_b = np.einsum(
+            "ijk, ikz -> ijz", np.transpose(data_a, (0, 2, 1)), grad_np
+        )
+        self._set_gradients(Tensor(grad_a), Tensor(grad_b))
+
+    def __repr__(self):
+        return "BatchMatrixMultiplication(BinaryOp)"
+
+
+def bmm(tensor_a: "Tensor", tensor_b: "Tensor") -> "Tensor":
+    """Performs a batch matrix-matrix product of matrices.
+
+    Both `tensor_a` and `tensor_b` must be 3D tensors.
+
+    Paremeters
     ----------
     tensor_a : avagrad.Tensor
-        Tensor A of the matrix multiplication A x B.
     tensor_b : avagrad.Tensor
-        Tensor B of the matrix multiplication A x B.
-    tensor_c : avagrad.Tensor
-        Tensor C of the operation (A x B) + C
 
     Returns
     -------
     avagrad.Tensor
-        Output tensor.
-
-    Warning
-    -------
-    Currently, this operation is not performed by fusing the operations but by
-    chaining them. Expect this to change in the future.
     """
-    # TODO: https://github.com/nschloe/pyfma
-    return add(matmul(tensor_a, tensor_b), tensor_c)
+    return Operation(BatchMatrixMultiplication, tensor_a, tensor_b).run()
 
 
 # -----------------------------------------------------------------------------
@@ -507,6 +705,7 @@ class Multiply(BinaryOp):
             np.multiply(data_a, data_b, *args, **kwargs),
             parents=self.parents,
             is_leaf=False,
+            track_gradient=self.track_gradient,
             op_name=self.__repr__(),
         )
 
@@ -965,7 +1164,6 @@ class Reshape(UnaryOp):
     def forward(self, newshape, order="C"):
         return Tensor(
             np.reshape(self.get_value(), newshape=newshape, order=order),
-            dtype=self.tensor.dtype,
             is_leaf=False,
             parents=self.parents,
             track_gradient=self.track_gradient,
@@ -1056,7 +1254,6 @@ class Transpose(UnaryOp):
         self.axes = axes
         return Tensor(
             np.transpose(data, axes=axes),
-            dtype=self.tensor.dtype,
             is_leaf=False,
             track_gradient=self.track_gradient,
             parents=self.parents,
@@ -1623,6 +1820,10 @@ class Tensor:
     def matmul(self, other, *args, **kwargs) -> "Tensor":
         """Matrix multiplication between self and passed tensor"""
         return matmul(self, other, *args, **kwargs)
+
+    def bmm(self, other) -> "Tensor":
+        """Batch matrix multiplication between self and passed tensor"""
+        return bmm(self, other)
 
     def max(self, *args, **kwargs) -> "Tensor":
         """Maximum of self tensor along given axis."""
