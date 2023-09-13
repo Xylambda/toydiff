@@ -62,6 +62,7 @@ __BINARY_OPS = [
     "maximum",
     "minimum",
     "divide",
+    "bmm",
 ]
 
 __REDUCE_OPS = ["max", "min", "sum", "mean", "std"]
@@ -441,7 +442,7 @@ class OperationRunner:
 
 
 # -----------------------------------------------------------------------------
-# ----------------------------- BINARY OPERATIONS -----------------------------
+# ----------------------------- TERNARY OPERATIONS ----------------------------
 # -----------------------------------------------------------------------------
 class Where(TernaryOp):
     def forward(self, *args, **kwargs) -> "Tensor":
@@ -669,7 +670,7 @@ class BatchMatrixMultiplication(BinaryOp):
         grad_a = np.einsum(
             "ijk, ikz -> ijz",
             grad_np,
-            np.transpose(data_b.detach().numpy(), (0, 2, 1)),
+            np.transpose(data_b.numpy(), (0, 2, 1)),
         )
         grad_b = np.einsum(
             "ijk, ikz -> ijz", np.transpose(data_a, (0, 2, 1)), grad_np
@@ -681,7 +682,7 @@ class BatchMatrixMultiplication(BinaryOp):
 
 
 def bmm(tensor_a: "Tensor", tensor_b: "Tensor") -> "Tensor":
-    """Performs a batch matrix-matrix product of matrices.
+    """Batch matrix-matrix product of 2 tensors.
 
     Both `tensor_a` and `tensor_b` must be 3D tensors.
 
@@ -1552,7 +1553,7 @@ def std(
         axis=axis, keepdims=keepdims, ddof=ddof
     )
     """
-    # TODO: much more faster to create a ReduceOp
+    # TODO: it will probably be much faster to create a ReduceOp
     return power(
         power(tensor - tensor.mean(axis=axis, keepdims=keepdims), 2).sum()
         / (len(tensor) - ddof),
@@ -1854,19 +1855,19 @@ class Tensor:
         return sum(self, *args, **kwargs)
 
     def log(self, *args, **kwargs) -> "Tensor":
-        """Calculate the natural log of all elements in self tensor."""
+        """Compute the natural log of all elements in self tensor."""
         return log(self, *args, **kwargs)
 
     def exp(self) -> "Tensor":
-        """Calculate the exponential of all elements in self tensor."""
+        """Compute the exponential of all elements in self tensor."""
         return exp(self)
 
     def sigmoid(self, *args, **kwargs) -> "Tensor":
-        """Calculate sigmoid for all elements in self tensor."""
+        """Compute sigmoid for all elements in self tensor."""
         return sigmoid(self, *args, **kwargs)
 
     def abs(self, *args, **kwargs) -> "Tensor":
-        """Calculate absolute value for all elements in self tensor."""
+        """Compute absolute value for all elements in self tensor."""
         return abs(self, *args, **kwargs)
 
     def __repr__(self):

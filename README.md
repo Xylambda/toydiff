@@ -24,7 +24,7 @@ pip install -e avagrad/. -r avagrad/requirements-dev.txt
 ```
 
 ## Tests
-To run test, you must install the library as a `developer`.
+To run tests you must install the library as a `developer`.
 
 ```bash
 cd avagrad/
