@@ -660,7 +660,6 @@ class BatchMatrixMultiplication(BinaryOp):
             parents=self.parents,
             is_leaf=False,
             track_gradient=self.track_gradient,
-            is_leaf=False,
             op_name=self.__repr__(),
         )
 
@@ -1548,10 +1547,20 @@ def std(
     ddof: int = 0,
     keepdims: bool = False,
 ):
-    """
-    return OperationRunner(StandardDeviation, tensor).run(
-        axis=axis, keepdims=keepdims, ddof=ddof
-    )
+    """Compute the standard deviation along the specified axis.
+
+    Parameters
+    ----------
+    tensor : avagrad.Tensor
+    axis : int, optional, default: None
+        Axis or axes along which the stds are computed. The default is to
+        compute the std of the flattened array.
+    ddof : int. optional, default: 0
+        Degrees of freedom.
+    keepdims : bool, optional, default: False
+        If this is set to True, the axes which are reduced are left in the
+        result as dimensions with size one. With this option, the result will
+        broadcast correctly against the input array
     """
     # TODO: it will probably be much faster to create a ReduceOp
     return power(
