@@ -3,7 +3,7 @@ Collection of optimizers.
 """
 from abc import abstractmethod
 
-from toydiff.nn.blocks import Module
+from avagrad.nn.blocks import Module
 
 __all__ = ["Optimizer", "SGD"]
 

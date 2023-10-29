@@ -1,7 +1,7 @@
 import torch
 import numpy as np
-import toydiff as tdf
-from toydiff.testing import generate_input
+import avagrad as ag
+from avagrad.testing import generate_input
 
 
 RTOL = 1e-06
@@ -11,7 +11,7 @@ def test_reshape():
     # -------------------------------------------------------------------------
     # test 1d
     tensor, tensor_torch = generate_input((3, ))[0]
-    out = tdf.reshape(tensor, (-1, 1))
+    out = ag.reshape(tensor, (-1, 1))
     out_torch = torch.reshape(tensor_torch, (-1, 1))
 
     # call backward
@@ -31,7 +31,7 @@ def test_reshape():
     # -------------------------------------------------------------------------
     # test 2d
     tensor, tensor_torch = generate_input((3, 2))[0]
-    out = tdf.reshape(tensor, (2, 3))
+    out = ag.reshape(tensor, (2, 3))
     out_torch = torch.reshape(tensor_torch, (2, 3))
 
     # call backward
@@ -51,7 +51,7 @@ def test_reshape():
     # -------------------------------------------------------------------------
     # test 3d
     tensor, tensor_torch = generate_input((3, 2, 3))[0]
-    out = tdf.reshape(tensor, (-1, 1, 1))
+    out = ag.reshape(tensor, (-1, 1, 1))
     out_torch = torch.reshape(tensor_torch, (-1, 1, 1))
 
     # call backward

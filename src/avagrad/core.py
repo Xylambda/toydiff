@@ -1,6 +1,6 @@
 """
-Core of the library toydiff. It contains:
-    1. A set of composable differentiable operations for toydiff.Tensor
+Core of the library avagrad. It contains:
+    1. A set of composable differentiable operations for avagrad.Tensor
     objects.
     2. A Tensor class.
 
@@ -14,11 +14,12 @@ The module is structured as follows:
     2. Then, a class is defined for each operation. Each class extends the
     appropiate base class.
 
-    3. After each class, a function is created. The function makes use of the
-    class and adds the backward function if needed to the result tensor.
+    3. After each class, a function is created. Using this function will be
+    enough to generate a computational graph from which to obtain the
+    derivatives.
 
     4. The Tensor class is created using the above function and, if possible,
-    dunder/magic methods are used to ensure a smooth usage of the library.
+    dunder/magic methods are used to ensure a smooth use of the library.
 
 """
 import warnings
@@ -28,13 +29,13 @@ from typing import List, Literal, Optional, Tuple, Type, Union
 import numpy as np
 from scipy.special import expit
 
-from toydiff.exceptions import (
+from avagrad.exceptions import (
     GradientShapeError,
     InplaceModificationError,
     NullBackwardFunctionError,
     ZeroGradientError,
 )
-from toydiff.utils import gradient_collapse, topological_sort
+from avagrad.utils import gradient_collapse, topological_sort
 
 __UNARY_OPS = [
     "log",
@@ -61,6 +62,7 @@ __BINARY_OPS = [
     "maximum",
     "minimum",
     "divide",
+    "bmm",
 ]
 
 __REDUCE_OPS = ["max", "min", "sum", "mean", "std"]
@@ -73,10 +75,18 @@ __OTHER = [
     "zeros_like",
     "empty",
     "empty_like",
-    "fma",  # TODO: at some point, we may need to add ternary ops
 ]
 
-__all__ = ["Tensor"] + __UNARY_OPS + __BINARY_OPS + __REDUCE_OPS + __OTHER
+__TERNARY = ["fma"]
+
+__all__ = (
+    ["Tensor"]
+    + __UNARY_OPS
+    + __BINARY_OPS
+    + __REDUCE_OPS
+    + __OTHER
+    + __TERNARY
+)
 
 
 class Operation(ABC):
@@ -88,7 +98,7 @@ class Operation(ABC):
 
     Attributes
     ----------
-    out : toydiff.Tensor
+    out : avagrad.Tensor
     """
 
     __slots__ = ["out", "track_gradient"]
@@ -109,7 +119,7 @@ class Operation(ABC):
             if cast:
                 return Tensor(obj, is_leaf=True, track_gradient=True)
             else:
-                msg = "Operations are supported only for toydiff.Tensor instances"
+                msg = "Operations are supported only for avagrad.Tensor instances"
                 raise TypeError(msg)
         else:
             return obj
@@ -145,7 +155,7 @@ class Operation(ABC):
 
         Returns
         -------
-        toydiff.Tensor
+        avagrad.Tensor
             Output tensor.
         """
         raise NotImplementedError("Subclasses must override this method")
@@ -159,12 +169,12 @@ class Operation(ABC):
         """Actual backward call.
 
         This method ensures the passed gradient is not None and then calls
-        the backward method that is implement for this operation using the
+        the backward method that is implemented for this operation using the
         aforementioned gradient.
 
         Parameters
         ----------
-        gradient : toydiff.Tensor
+        gradient : avagrad.Tensor
         """
         if gradient is None:
             gradient = self.get_gradient()
@@ -180,7 +190,7 @@ class Operation(ABC):
 
         Parameters
         ----------
-        gradient : toydiff.Tensor, optional, default: None
+        gradient : avagrad.Tensor, optional, default: None
             If None, a Tensor of 1's of the same shape as the output tensor of
             this operation will be used.
         """
@@ -253,12 +263,12 @@ class BinaryOp(Operation):
 
     Parameters
     ----------
-    tensor_a : toydiff.Tensor
-    tensor_b : toydiff.Tensor
+    tensor_a : avagrad.Tensor
+    tensor_b : avagrad.Tensor
 
     Attributes
     ----------
-    parents : list of toydiff.Tensor
+    parents : list of avagrad.Tensor
     """
 
     __slots__ = ["tensor_a", "tensor_b", "parents"]
@@ -307,6 +317,88 @@ class ReduceOp(UnaryOp):
         super().__init__(tensor=tensor)
 
 
+class TernaryOp(Operation):  # where, fma
+    """Base class to implement ternary operations.
+
+    The method `get_value` will return the NumPy arrays of the `tensor_a`,
+    `tensor_b` and `tensor_c` in the same order they were passed.
+
+    Similarly, the method `_set_gradients` expects the first, second and thrid
+    arguments to be the gradients for the first, second and third tensors
+    passed in the constructors (respectively).
+
+    Parameters
+    ----------
+    tensor_a : avagrad.Tensor
+    tensor_b : avagrad.Tensor
+    tensor_c : avagrad.Tensor
+
+    Attributes
+    ----------
+    parents : list of avagrad.Tensor
+    """
+
+    __slots__ = ["tensor_a", "tensor_b", "tensor_c", "parents"]
+
+    def __init__(
+        self, tensor_a: "Tensor", tensor_b: "Tensor", tensor_c: "Tensor"
+    ):
+        tensor_a = self.check_dtype_and_cast(tensor_a)
+        tensor_b = self.check_dtype_and_cast(tensor_b)
+        tensor_c = self.check_dtype_and_cast(tensor_c)
+
+        if (
+            tensor_a.track_gradient
+            or tensor_b.track_gradient
+            or tensor_c.track_gradient
+        ):
+            track_gradient = True
+        else:
+            track_gradient = False
+
+        super().__init__(track_gradient=track_gradient)
+
+        self.tensor_a = tensor_a
+        self.tensor_b = tensor_b
+        self.tensor_c = tensor_c
+
+        self.parents = [self.tensor_a, self.tensor_b, self.tensor_c]
+
+    def get_value(self) -> np.ndarray:
+        return (
+            self.tensor_a.numpy(),
+            self.tensor_b.numpy(),
+            self.tensor_c.numpy(),
+        )
+
+    def _set_gradients(
+        self,
+        gradient_a: "Tensor",
+        gradient_b: "Tensor",
+        gradient_c: "Tensor",
+    ) -> None:
+        if self.tensor_a.track_gradient:
+            self.try_reshape(self.tensor_a, gradient_a)
+            if self.tensor_a.gradient is None:
+                self.tensor_a.gradient = gradient_a
+            else:
+                self.tensor_a.gradient.value += gradient_a.value
+
+        if self.tensor_b.track_gradient:
+            self.try_reshape(self.tensor_b, gradient_b)
+            if self.tensor_b.gradient is None:
+                self.tensor_b.gradient = gradient_b
+            else:
+                self.tensor_b.gradient.value += gradient_b.value
+
+        if self.tensor_c.track_gradient:
+            self.try_reshape(self.tensor_c, gradient_c)
+            if self.tensor_c.gradient is None:
+                self.tensor_c.gradient = gradient_c
+            else:
+                self.tensor_c.gradient.value += gradient_c.value
+
+
 class OperationRunner:
     """Operation runner will take care of running an operation appropiately.
 
@@ -321,17 +413,17 @@ class OperationRunner:
 
     Parameters
     ----------
-    opration : toydiff.Operation
+    opration : avagrad.Operation
         Operation to run.
     tensors : iterable of tensors
         Operands for the operation
 
     Example
     -------
-    >>> import toydiff as tdf
-    >>> tensor = tdf.Tensor([1, 2, 3, 4])
-    >>> args, **kwargs = ...
-    >>> out = tdf.OperationRunner(tdf.core.Add, tensor).run(*args, **kwargs)
+    >>> from avagrad.core import Sum, OperationRunner, Tensor
+    >>> tensor = ag.Tensor([1, 2, 3, 4])
+    >>> args, kwargs = ...
+    >>> out = OperationRunner(Sum, tensor).run(*args, **kwargs)
     """
 
     __slots__ = ["operation"]
@@ -350,6 +442,83 @@ class OperationRunner:
 
 
 # -----------------------------------------------------------------------------
+# ----------------------------- TERNARY OPERATIONS ----------------------------
+# -----------------------------------------------------------------------------
+class Where(TernaryOp):
+    def forward(self, *args, **kwargs) -> "Tensor":
+        return super().forward(*args, **kwargs)
+
+    def backward(self, gradient: Optional["Tensor"] = None) -> None:
+        pass
+
+
+# -----------------------------------------------------------------------------
+class FusedMatMulAdd(TernaryOp):
+    __slots__ = ["mm"]
+
+    def __init__(
+        self, tensor_a: "Tensor", tensor_b: "Tensor", tensor_c: "Tensor"
+    ):
+        super().__init__(tensor_a, tensor_b, tensor_c)
+        self.mm = None
+
+    def forward(self) -> "Tensor":
+        data_a, data_b, data_c = self.get_value()
+        self.mm = np.matmul(data_a, data_b)
+        return Tensor(
+            self.mm + data_c,
+            is_leaf=False,
+            track_gradient=self.track_gradient,
+            parents=self.parents,
+            op_name=self.__repr__(),
+        )
+
+    def backward(self, gradient: Optional["Tensor"] = None) -> None:
+        data_a, data_b, data_c = self.get_value()
+        grad_np = gradient.numpy()
+
+        grad_a = Tensor(np.matmul(grad_np, data_b.T))
+        grad_b = Tensor(np.matmul(data_a.T, grad_np))
+
+        # consider a the matmul and b the tensor c
+        _, grad_c = gradient_collapse(self.mm, data_c, self.mm, grad_np)
+        self._set_gradients(grad_a, grad_b, Tensor(grad_c))
+
+    def __repr__(self):
+        return "FusedMatMulAdd(TernaryOp)"
+
+
+def fma(
+    tensor_a: "Tensor", tensor_b: "Tensor", tensor_c: "Tensor"
+) -> "Tensor":
+    """Fused matrix multiplication and addition operator.
+
+    Performs a matrix multiplication of `tensor_a` and `tensor_b` and adds the
+    result to `tensor_c`.
+
+    Parameters
+    ----------
+    tensor_a : avagrad.Tensor
+        Tensor A of the matrix multiplication A x B.
+    tensor_b : avagrad.Tensor
+        Tensor B of the matrix multiplication A x B.
+    tensor_c : avagrad.Tensor
+        Tensor C of the operation (A x B) + C
+
+    Returns
+    -------
+    avagrad.Tensor
+        Output tensor.
+
+    Warning
+    -------
+    Currently, this operation is not performed by fusing the operations but by
+    chaining them in NumPy: np.matmul(a, b) + c
+    """
+    return OperationRunner(FusedMatMulAdd, tensor_a, tensor_b, tensor_c).run()
+
+
+# -----------------------------------------------------------------------------
 # ----------------------------- BINARY OPERATIONS -----------------------------
 # -----------------------------------------------------------------------------
 class Add(BinaryOp):
@@ -359,6 +528,7 @@ class Add(BinaryOp):
             np.add(data_a, data_b, *args, **kwargs),
             parents=self.parents,
             is_leaf=False,
+            track_gradient=self.track_gradient,
             op_name=self.__repr__(),
         )
 
@@ -381,14 +551,14 @@ def add(tensor_a: "Tensor", tensor_b: "Tensor", *args, **kwargs) -> "Tensor":
 
     Parameters
     ----------
-    tensor_a : toydiff.Tensor
+    tensor_a : avagrad.Tensor
         Tensor to be added.
-    tensor_b : toydiff.Tensor
+    tensor_b : avagrad.Tensor
         Tensor to be added.
 
     Returns
     -------
-    out : toydiff.Tensor
+    out : avagrad.Tensor
         The sum of tensor_a and tensor_b, element-wise.
     """
     return OperationRunner(Add, tensor_a, tensor_b).run(*args, **kwargs)
@@ -406,14 +576,14 @@ def subtract(
 
     Parameters
     ----------
-    tensor_a : toydiff.Tensor
+    tensor_a : avagrad.Tensor
         Tensor to subtract from.
-    tensor_b : toydiff.Tensor
+    tensor_b : avagrad.Tensor
         Subtracted tensor.
 
     Returns
     -------
-    out : toydiff.Tensor
+    out : avagrad.Tensor
         The difference of tensor_a and tensor_b, element-wise.
     """
     return OperationRunner(Add, tensor_a, -tensor_b).run(*args, **kwargs)
@@ -423,7 +593,7 @@ def subtract(
 class MatrixMultiplication(BinaryOp):
     """Matrix multiplication operation class.
 
-    It implements the forward and backward passes, but `toydiff.matmul`
+    It implements the forward and backward passes, but `avagrad.matmul`
     function should be used to compute the matrix product of two tensors, since
     it will take care of making the appropiate checks and set the gradients.
     """
@@ -434,6 +604,7 @@ class MatrixMultiplication(BinaryOp):
             np.matmul(data_a, data_b, *args, **kwargs),
             parents=self.parents,
             is_leaf=False,
+            track_gradient=self.track_gradient,
             op_name=self.__repr__(),
         )
 
@@ -455,12 +626,12 @@ def matmul(
 
     Parameters
     ----------
-    tensor_a : toydiff.Tensor
-    tensor_b : toydiff.Tensor
+    tensor_a : avagrad.Tensor
+    tensor_b : avagrad.Tensor
 
     Return
     ------
-    out : toydiff.Tensor
+    out : avagrad.Tensor
         Matrix product of the input tensors.
     """
     return OperationRunner(MatrixMultiplication, tensor_a, tensor_b).run(
@@ -469,33 +640,61 @@ def matmul(
 
 
 # -----------------------------------------------------------------------------
-# TODO: implement a more low-level operations
-def fma(
-    tensor_a: "Tensor", tensor_b: "Tensor", tensor_c: "Tensor"
-) -> "Tensor":
-    """Fused matrix multiplication and addition operator.
+class BatchMatrixMultiplication(BinaryOp):
+    def __init__(
+        self, tensor_a: "Tensor", tensor_b: "Tensor", tensor_c: "Tensor"
+    ):
+        if tensor_a.ndim != 3:
+            raise Exception("'tensor_a' must be a 3D tensor")
 
-    Parameters
+        if tensor_b.ndim != 3:
+            raise Exception("'tensor_b' must be a 3D tensor")
+
+        super().__init__(tensor_a, tensor_b, tensor_c)
+
+    def forward(self):
+        data_a, data_b = self.get_value()
+        # np.stack([a[i] @ b[i] for i in range(a.shape[0])])
+        return Tensor(
+            np.eisum("ijk, ikz -> ijz", data_a, data_b),
+            parents=self.parents,
+            is_leaf=False,
+            track_gradient=self.track_gradient,
+            op_name=self.__repr__(),
+        )
+
+    def backward(self, gradient=None):
+        data_a, data_b = self.get_value()
+        grad_np = gradient.numpy()
+        grad_a = np.einsum(
+            "ijk, ikz -> ijz",
+            grad_np,
+            np.transpose(data_b.numpy(), (0, 2, 1)),
+        )
+        grad_b = np.einsum(
+            "ijk, ikz -> ijz", np.transpose(data_a, (0, 2, 1)), grad_np
+        )
+        self._set_gradients(Tensor(grad_a), Tensor(grad_b))
+
+    def __repr__(self):
+        return "BatchMatrixMultiplication(BinaryOp)"
+
+
+def bmm(tensor_a: "Tensor", tensor_b: "Tensor") -> "Tensor":
+    """Batch matrix-matrix product of 2 tensors.
+
+    Both `tensor_a` and `tensor_b` must be 3D tensors.
+
+    Paremeters
     ----------
-    tensor_a : toydiff.Tensor
-        Tensor A of the matrix multiplication A x B.
-    tensor_b : toydiff.Tensor
-        Tensor B of the matrix multiplication A x B.
-    tensor_c : toydiff.Tensor
-        Tensor C of the operation (A x B) + C
+    tensor_a : avagrad.Tensor
+    tensor_b : avagrad.Tensor
 
     Returns
     -------
-    toydiff.Tensor
-        Output tensor.
-
-    Warning
-    -------
-    Currently, this operation is not performed by fusing the operations but by
-    chaining them. Expect this to change in the future.
+    avagrad.Tensor
     """
-    # TODO: https://github.com/nschloe/pyfma
-    return add(matmul(tensor_a, tensor_b), tensor_c)
+    return Operation(BatchMatrixMultiplication, tensor_a, tensor_b).run()
 
 
 # -----------------------------------------------------------------------------
@@ -506,6 +705,7 @@ class Multiply(BinaryOp):
             np.multiply(data_a, data_b, *args, **kwargs),
             parents=self.parents,
             is_leaf=False,
+            track_gradient=self.track_gradient,
             op_name=self.__repr__(),
         )
 
@@ -530,12 +730,12 @@ def multiply(
 
     Paremeters
     ----------
-    tensor_a : toydiff.Tensor
-    tensor_b : toydiff.Tensor
+    tensor_a : avagrad.Tensor
+    tensor_b : avagrad.Tensor
 
     Returns
     -------
-    toydiff.Tensor
+    avagrad.Tensor
     """
     return OperationRunner(Multiply, tensor_a, tensor_b).run(*args, **kwargs)
 
@@ -550,12 +750,12 @@ def divide(
 
     Paremeters
     ----------
-    tensor_a : toydiff.Tensor
-    tensor_b : toydiff.Tensor
+    tensor_a : avagrad.Tensor
+    tensor_b : avagrad.Tensor
 
     Returns
     -------
-    toydiff.Tensor
+    avagrad.Tensor
     """
     return OperationRunner(Multiply, tensor_a, power(tensor_b, -1)).run(
         *args, **kwargs
@@ -601,12 +801,12 @@ def power(tensor_a: "Tensor", tensor_b: "Tensor", *args, **kwargs) -> "Tensor":
 
     Parameters
     ----------
-    tensor_a : toydiff.Tensor
-    tensor_b : toydiff.Tensor
+    tensor_a : avagrad.Tensor
+    tensor_b : avagrad.Tensor
 
     Return
     ------
-    out : toydiff.Tensor
+    out : avagrad.Tensor
         Power operation of the input tensors.
     """
     return OperationRunner(Power, tensor_a, tensor_b).run(*args, **kwargs)
@@ -654,12 +854,12 @@ def maximum(
 
     Paremeters
     ----------
-    tensor_a : toydiff.Tensor
-    tensor_b : toydiff.Tensor
+    tensor_a : avagrad.Tensor
+    tensor_b : avagrad.Tensor
 
     Returns
     -------
-    out : toydiff.Tensor
+    out : avagrad.Tensor
         The maximum of tensor_1 and tensor_b, element-wise.
     """
     return OperationRunner(Maximum, tensor_a, tensor_b).run(*args, **kwargs)
@@ -707,12 +907,12 @@ def minimum(
 
     Paremeters
     ----------
-    tensor_a : toydiff.Tensor
-    tensor_b : toydiff.Tensor
+    tensor_a : avagrad.Tensor
+    tensor_b : avagrad.Tensor
 
     Returns
     -------
-    out : toydiff.Tensor
+    out : avagrad.Tensor
         The minimum of tensor_1 and tensor_b, element-wise.
     """
     return OperationRunner(Minimum, tensor_a, tensor_b).run(*args, **kwargs)
@@ -743,7 +943,7 @@ def log(tensor: "Tensor", *args, **kwargs) -> "Tensor":
 
     Parameters
     ----------
-    tensor : toydiff.Tensor
+    tensor : avagrad.Tensor
     """
     return OperationRunner(Log, tensor).run(*args, **kwargs)
 
@@ -781,12 +981,12 @@ def sigmoid(tensor: "Tensor", *args, **kwargs) -> "Tensor":
 
     Paremters
     ---------
-    tensor : toydiff.Tensor
+    tensor : avagrad.Tensor
         Tensor to apply the sigmoid to.
 
     Returns
     -------
-    out : toydiff.Tensor
+    out : avagrad.Tensor
         Logistic sigmoid.
     """
     return OperationRunner(Sigmoid, tensor).run(*args, **kwargs)
@@ -817,12 +1017,12 @@ def negative(tensor: "Tensor", *args, **kwargs) -> "Tensor":
 
     Parameters
     ----------
-    tensor : toydiff.Tensor
+    tensor : avagrad.Tensor
         Input tensor.
 
     Returns
     -------
-    out : toydiff.Tensor
+    out : avagrad.Tensor
         Returned tensor.
     """
     return OperationRunner(Negative, tensor).run(*args, **kwargs)
@@ -853,11 +1053,11 @@ def sin(tensor: "Tensor", *args, **kwargs) -> "Tensor":
 
     Parameters
     ----------
-    tensor : toydiff.Tensor
+    tensor : avagrad.Tensor
 
     Return
     ------
-    out : toydiff.Tensor
+    out : avagrad.Tensor
     """
     return OperationRunner(Sin, tensor).run(*args, **kwargs)
 
@@ -887,11 +1087,11 @@ def cos(tensor: "Tensor", *args, **kwargs) -> "Tensor":
 
     Parameters
     ----------
-    tensor : toydiff.Tensor
+    tensor : avagrad.Tensor
 
     Return
     ------
-    out : toydiff.Tensor
+    out : avagrad.Tensor
     """
     return OperationRunner(Cos, tensor).run(*args, **kwargs)
 
@@ -921,11 +1121,11 @@ def tan(tensor: "Tensor", *args, **kwargs) -> "Tensor":
 
     Parameters
     ----------
-    tensor : toydiff.Tensor
+    tensor : avagrad.Tensor
 
     Return
     ------
-    out : toydiff.Tensor
+    out : avagrad.Tensor
     """
     return OperationRunner(Tan, tensor).run(*args, **kwargs)
 
@@ -936,11 +1136,11 @@ def cosh(tensor: "Tensor") -> "Tensor":
 
     Parameters
     ----------
-    tensor : toydiff.Tensor
+    tensor : avagrad.Tensor
 
     Return
     ------
-    out : toydiff.Tensor
+    out : avagrad.Tensor
     """
     return (tensor.exp() + (-tensor).exp()) / 2
 
@@ -950,11 +1150,11 @@ def sinh(tensor: "Tensor") -> "Tensor":
 
     Parameters
     ----------
-    tensor : toydiff.Tensor
+    tensor : avagrad.Tensor
 
     Return
     ------
-    out : toydiff.Tensor
+    out : avagrad.Tensor
     """
     return (tensor.exp() - (-tensor).exp()) / 2
 
@@ -964,7 +1164,6 @@ class Reshape(UnaryOp):
     def forward(self, newshape, order="C"):
         return Tensor(
             np.reshape(self.get_value(), newshape=newshape, order=order),
-            dtype=self.tensor.dtype,
             is_leaf=False,
             parents=self.parents,
             track_gradient=self.track_gradient,
@@ -994,7 +1193,7 @@ def reshape(
 
     Parameters
     ----------
-    tensor : toydiff.Tensor
+    tensor : avagrad.Tensor
         Tensor to be reshaped.
     newshape : int or tuple or ints
         The new shape should be compatible with the original shape. If an
@@ -1011,7 +1210,7 @@ def reshape(
 
     Returns
     -------
-    toydiff.Tensor
+    avagrad.Tensor
         This will be a new view object if possible; otherwise, it will be a
         copy. Note there is no guarantee of the memory layout (C- or Fortran-
         contiguous) of the returned tensor.
@@ -1055,7 +1254,6 @@ class Transpose(UnaryOp):
         self.axes = axes
         return Tensor(
             np.transpose(data, axes=axes),
-            dtype=self.tensor.dtype,
             is_leaf=False,
             track_gradient=self.track_gradient,
             parents=self.parents,
@@ -1164,7 +1362,7 @@ def max(tensor: "Tensor", *args, **kwargs) -> "Tensor":
 
     Parameters
     ----------
-    tensor : toydiff.Tensor
+    tensor : avagrad.Tensor
     """
     return OperationRunner(Max, tensor).run(*args, **kwargs)
 
@@ -1197,7 +1395,7 @@ def min(tensor: "Tensor", *args, **kwargs) -> "Tensor":
 
     Parameters
     ----------
-    tensor : toydiff.Tensor
+    tensor : avagrad.Tensor
     """
     return OperationRunner(Min, tensor).run(*args, **kwargs)
 
@@ -1227,12 +1425,12 @@ def sum(tensor: "Tensor", *args, **kwargs) -> "Tensor":
 
     Parameters
     ----------
-    tensor : toydiff.Tensor
+    tensor : avagrad.Tensor
         Elements to sum.
 
     Returns
     -------
-    out : toydiff.Tensor
+    out : avagrad.Tensor
         Added elements.
     """
     return OperationRunner(Sum, tensor).run(*args, **kwargs)
@@ -1313,7 +1511,7 @@ def mean(
 
     Parameters
     ----------
-    tensor : toydiff.Tensor
+    tensor : avagrad.Tensor
     axis : int, optional, default: None
         Axis or axes along which the means are computed. The default is to
         compute the mean of the flattened array.
@@ -1349,12 +1547,22 @@ def std(
     ddof: int = 0,
     keepdims: bool = False,
 ):
+    """Compute the standard deviation along the specified axis.
+
+    Parameters
+    ----------
+    tensor : avagrad.Tensor
+    axis : int, optional, default: None
+        Axis or axes along which the stds are computed. The default is to
+        compute the std of the flattened array.
+    ddof : int. optional, default: 0
+        Degrees of freedom.
+    keepdims : bool, optional, default: False
+        If this is set to True, the axes which are reduced are left in the
+        result as dimensions with size one. With this option, the result will
+        broadcast correctly against the input array
     """
-    return OperationRunner(StandardDeviation, tensor).run(
-        axis=axis, keepdims=keepdims, ddof=ddof
-    )
-    """
-    # TODO: much more faster to create a ReduceOp
+    # TODO: it will probably be much faster to create a ReduceOp
     return power(
         power(tensor - tensor.mean(axis=axis, keepdims=keepdims), 2).sum()
         / (len(tensor) - ddof),
@@ -1423,7 +1631,7 @@ def empty_like(
 # ------------------------------- Tensor Class --------------------------------
 # -----------------------------------------------------------------------------
 class Tensor:
-    """A toydiff.Tensor is a multi-dimensional matrix containing elements of a
+    """A avagrad.Tensor is a multi-dimensional matrix containing elements of a
     single data type.
 
     Chaining tensors with arbitrary operations will generate a differentiable
@@ -1436,15 +1644,15 @@ class Tensor:
     Tensor creation
     ---------------
     You can create a tensor passing an array or an array-wrappable object:
-    >>> import toydiff as tdf
+    >>> import avagrad as ag
     >>> import numpy as np
-    >>> a = tdf.Tensor([1, 2, 3], track_gradient=True)
-    >>> b = tdf.Tensor(np.random.rand(3, 3), track_gradient=True)
+    >>> a = ag.Tensor([1, 2, 3], track_gradient=True)
+    >>> b = ag.Tensor(np.random.rand(3, 3), track_gradient=True)
 
-    ToyDiff also supports some functions to generate Tensors with ease:
-    >>> tdf.rand((3,3), track_gradient=True)
-    >>> tdf.zeros((3,3), track_gradient=True)
-    >>> tdf.ones_like(a, track_gradient=True)
+    avagrad also supports some functions to generate Tensors with ease:
+    >>> ag.rand((3,3), track_gradient=True)
+    >>> ag.zeros((3,3), track_gradient=True)
+    >>> ag.ones_like(a, track_gradient=True)
 
     Forward computation
     -------------------
@@ -1456,8 +1664,8 @@ class Tensor:
 
     We can add as many operations as we want:
 
-    >>> d = tdf.log(c)
-    >>> e = tdf.sum(d)
+    >>> d = ag.log(c)
+    >>> e = ag.sum(d)
 
     Backward computation
     --------------------
@@ -1545,7 +1753,7 @@ class Tensor:
 
         Returns
         -------
-        toydiff.Tensor
+        avagrad.Tensor
             Detached tensor.
         """
         return Tensor(self.value.copy(), dtype=self.dtype, is_leaf=True)
@@ -1623,6 +1831,10 @@ class Tensor:
         """Matrix multiplication between self and passed tensor"""
         return matmul(self, other, *args, **kwargs)
 
+    def bmm(self, other) -> "Tensor":
+        """Batch matrix multiplication between self and passed tensor"""
+        return bmm(self, other)
+
     def max(self, *args, **kwargs) -> "Tensor":
         """Maximum of self tensor along given axis."""
         return max(self, *args, **kwargs)
@@ -1652,19 +1864,19 @@ class Tensor:
         return sum(self, *args, **kwargs)
 
     def log(self, *args, **kwargs) -> "Tensor":
-        """Calculate the natural log of all elements in self tensor."""
+        """Compute the natural log of all elements in self tensor."""
         return log(self, *args, **kwargs)
 
     def exp(self) -> "Tensor":
-        """Calculate the exponential of all elements in self tensor."""
+        """Compute the exponential of all elements in self tensor."""
         return exp(self)
 
     def sigmoid(self, *args, **kwargs) -> "Tensor":
-        """Calculate sigmoid for all elements in self tensor."""
+        """Compute sigmoid for all elements in self tensor."""
         return sigmoid(self, *args, **kwargs)
 
     def abs(self, *args, **kwargs) -> "Tensor":
-        """Calculate absolute value for all elements in self tensor."""
+        """Compute absolute value for all elements in self tensor."""
         return abs(self, *args, **kwargs)
 
     def __repr__(self):
@@ -1759,14 +1971,14 @@ class Tensor:
 
         Parameters
         ----------
-        gradient : toydiff.Tensor, optional, default: None
+        gradient : avagrad.Tensor, optional, default: None
             Starting gradient. If None, a gradient Tensor of 1s and shape equal
             to self tensor shape will be passed.
         """
         if self.is_leaf:
             warn = (
                 "Calling 'backward' on a leaf tensor will have no effect other"
-                " than filling its gradient with ones"
+                " than filling its gradient with ones or passed gradient"
             )
             warnings.warn(warn)
 

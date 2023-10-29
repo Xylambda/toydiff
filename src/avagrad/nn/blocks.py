@@ -6,8 +6,8 @@ from collections import OrderedDict
 from itertools import chain
 from typing import Dict, Iterator, Optional, Tuple
 
-from toydiff.core import Tensor, fma, matmul
-from toydiff.random import randn
+from avagrad.core import Tensor, fma, matmul
+from avagrad.random import randn
 
 __all__ = ["Module", "Linear"]
 

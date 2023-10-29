@@ -7,7 +7,7 @@ from typing import Tuple
 
 import numpy as np
 
-from toydiff.core import Tensor
+from avagrad.core import Tensor
 
 __all__ = ["rand", "randn"]
 
@@ -27,7 +27,7 @@ def rand(shape: Tuple[int], track_gradient: bool = False) -> Tensor:
 
     Returns
     -------
-    toydiff.Tensor
+    avagrad.Tensor
         Generated tensor.
     """
     return Tensor(np.random.rand(*shape), track_gradient=track_gradient)
@@ -51,7 +51,7 @@ def randn(shape: Tuple[int], track_gradient: bool = False) -> Tensor:
 
     Returns
     -------
-    toydiff.Tensor
+    avagrad.Tensor
         Generated tensor.
     """
     return Tensor(np.random.randn(*shape), track_gradient=track_gradient)

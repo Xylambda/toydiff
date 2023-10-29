@@ -6,3 +6,4 @@ Alternatives that do same or very similar stuff:
 * [TinyGrad](https://github.com/tinygrad/tinygrad)
 * [JAX](https://github.com/google/jax)
 * [MyGrad](https://github.com/rsokl/MyGrad)
+* [MXNet](https://github.com/apache/mxnet)

@@ -1,5 +1,5 @@
 """
-Useful utilities for the use of toydiff.
+Useful utilities for the use of avagrad.
 """
 from typing import List, Tuple
 

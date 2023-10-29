@@ -1,6 +1,8 @@
-# Toydiff
+<p align="center">
+  <img src="img/logo.png" width="500">
+</p>
 
-`toydiff` is a simple automatic differentiation library that I created to wrap
+`avagrad` is a simple automatic differentiation library that I created to wrap
 my head around how autodiff works. It is built using NumPy and SciPy and it has
 been tested using PyTorch as a reference.
 
@@ -10,21 +12,22 @@ networks (WIP, only linear layers for now).
 ## Installation
 Normal user:
 ```bash
-git clone https://github.com/Xylambda/toydiff.git
-pip install toydiff/.
+git clone https://github.com/Xylambda/avagrad.git
+pip install avagrad/.
 ```
 
 Developer:
 ```bash
-git clone https://github.com/Xylambda/toydiff.git
-pip install -e toydiff/. -r toydiff/requirements-dev.txt
+git clone https://github.com/Xylambda/avagrad.git
+
+pip install -e avagrad/. -r avagrad/requirements-dev.txt
 ```
 
 ## Tests
-To run test, you must install the library as a `developer`.
+To run tests you must install the library as a `developer`.
 
 ```bash
-cd toydiff/
+cd avagrad/
 pytest -v tests/
 ```
 
@@ -32,13 +35,13 @@ pytest -v tests/
 The use is almost the same as the one you would expect from PyTorch:
 
 ```python
->>> import toydiff as tdf
+>>> import avagrad as ag
 >>> # use `track_gradient=True` to allow backward to fill the gradients
->>> a = tdf.random.rand((3,3), track_gradient=True)
->>> b = tdf.random.rand((3,3), track_gradient=True)
->>> c = tdf.matmul(a, b)
->>> d = tdf.log(c)
->>> e = tdf.sum(d)
+>>> a = ag.random.rand((3,3), track_gradient=True)
+>>> b = ag.random.rand((3,3), track_gradient=True)
+>>> c = ag.matmul(a, b)
+>>> d = ag.log(c)
+>>> e = ag.sum(d)
 ```
 
 Variable `e` is a Tensor that allows to backpropagate:
@@ -69,10 +72,10 @@ basic neural networks:
 
 ```python
 import numpy as np
-import toydiff as tdf
-from toydiff.nn.blocks import Linear
-from toydiff.nn.optim import SGD
-from toydiff.nn.functional import mse_loss
+import avagrad as ag
+from avagrad.nn.blocks import Linear
+from avagrad.nn.optim import SGD
+from avagrad.nn.functional import mse_loss
 
 # generate data
 x = np.arange(-1, 1, 0.01).reshape(-1,1)
@@ -82,8 +85,8 @@ y = 2 * x + np.random.normal(size=(len(x), 1), scale=0.3)
 model = Linear(1, 1, bias=False)
 
 # wrap your data in Tensors with `track_gradient=True`
-feat = tdf.Tensor(X, track_gradient=True)
-labels = tdf.Tensor(y, track_gradient=True)
+feat = ag.Tensor(X, track_gradient=True)
+labels = ag.Tensor(y, track_gradient=True)
 
 # pass model to optimizer
 optimizer = SGD(model)

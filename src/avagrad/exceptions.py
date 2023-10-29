@@ -1,13 +1,13 @@
 """
-Specific exceptions known to the use of ToyDiff.
+Specific exceptions known to the use of AvaGrad.
 """
 
 
-class ToyDiffError(Exception):
+class AvaGradError(Exception):
     """Base class for for exception in this module"""
 
 
-class NullBackwardFunctionError(ToyDiffError):
+class NullBackwardFunctionError(AvaGradError):
     """Exception raised when a call to a non-existing backward function is
     made
     """
@@ -16,7 +16,7 @@ class NullBackwardFunctionError(ToyDiffError):
         self.message = message
 
 
-class GradientShapeError(ToyDiffError):
+class GradientShapeError(AvaGradError):
     """Exception raised when a gradient tensor shape does not match the shape
     of the tensor it is associated with.
     """
@@ -25,7 +25,7 @@ class GradientShapeError(ToyDiffError):
         self.message = message
 
 
-class InplaceModificationError(ToyDiffError):
+class InplaceModificationError(AvaGradError):
     """Exception raised when user is trying to modify a tensor whose
     `backward_fn` has already been called.
     """
@@ -34,7 +34,7 @@ class InplaceModificationError(ToyDiffError):
         self.message = message
 
 
-class ZeroGradientError(ToyDiffError):
+class ZeroGradientError(AvaGradError):
     """Exception reaised when is not possible to zero the gradient of a Tensor."""
 
     def __init__(self, message) -> None:

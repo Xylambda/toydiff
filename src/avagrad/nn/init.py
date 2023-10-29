@@ -4,7 +4,7 @@ in-place.
 """
 import numpy as np
 
-from toydiff import Tensor
+from avagrad import Tensor
 
 __all__ = ["kaiming_uniform"]
 
